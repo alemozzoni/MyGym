@@ -22,7 +22,12 @@ import { coloreAllenamento } from "../../lib/colori";
 export default function Calendario() {
   const [params, setParams] = useSearchParams();
   // giorno selezionato salvato nell'URL: tornando indietro resta selezionato
-  const selezionato = params.get("giorno") ?? oggi();
+  // giorno non valido nell'URL → oggi (evita errori di date-fns)
+  const giornoUrl = params.get("giorno");
+  const selezionato =
+    giornoUrl && /^\d{4}-\d{2}-\d{2}$/.test(giornoUrl) && !isNaN(Date.parse(giornoUrl))
+      ? giornoUrl
+      : oggi();
   const [mese, setMese] = useState(() => startOfMonth(parseISO(selezionato)));
 
   const giorni = useMemo(() => {

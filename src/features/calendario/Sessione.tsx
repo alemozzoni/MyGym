@@ -11,7 +11,27 @@ import {
 import { Header, Pagina } from "../../components/Layout";
 import { Stepper } from "../../components/Stepper";
 import { IconaCestino, IconaPiu } from "../../components/Icone";
-import { formatta, oggi } from "../../lib/date";
+import { formatta, isoGiorno, oggi } from "../../lib/date";
+import {
+  chiaveBozza,
+  eliminaBozza,
+  leggiBozza,
+  salvaBozza,
+} from "../../lib/promemoria";
+
+/** Stato del form salvato in localStorage: sopravvive alla chiusura dell'app da parte di iOS */
+interface Bozza {
+  data: string;
+  schedaId: number;
+  allenamentoId: number;
+  note: string;
+  righe: RigaEsercizio[];
+  nomiStorici: { scheda: string; allenamento: string };
+  salvataIl: number;
+}
+
+const dataValida = (s: string | null) =>
+  s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(Date.parse(s)) ? s : null;
 
 interface RigaSerie {
   ripetizioni: number;
@@ -43,9 +63,10 @@ export default function Sessione() {
   const sessioneId = idParam ? Number(idParam) : undefined;
   const [query] = useSearchParams();
   const nav = useNavigate();
+  const kBozza = chiaveBozza(sessioneId);
 
   const [pronto, setPronto] = useState(false);
-  const [data, setData] = useState(query.get("data") ?? oggi());
+  const [data, setData] = useState(dataValida(query.get("data")) ?? oggi());
   const [schedaId, setSchedaId] = useState<number>(
     Number(query.get("scheda")) || 0,
   );
@@ -58,6 +79,11 @@ export default function Sessione() {
     scheda: "",
     allenamento: "",
   });
+  // true dopo la prima modifica dell'utente: da lì in poi lo stato viene salvato come bozza
+  const [sporco, setSporco] = useState(false);
+  const [bozzaRipristinata, setBozzaRipristinata] = useState<number | null>(
+    null,
+  );
 
   const schede = useLiveQuery(() => db.schede.toArray());
   const allenamenti = useLiveQuery(
@@ -71,7 +97,18 @@ export default function Sessione() {
   // ---- Caricamento iniziale ----
   useEffect(() => {
     (async () => {
-      if (sessioneId) {
+      const bozza = leggiBozza<Bozza>(kBozza);
+      if (bozza) {
+        // c'è un allenamento non salvato: lo ripristiniamo
+        setData(bozza.data);
+        setSchedaId(bozza.schedaId);
+        setAllenamentoId(bozza.allenamentoId);
+        setNote(bozza.note);
+        setRighe(bozza.righe);
+        setNomiStorici(bozza.nomiStorici);
+        setSporco(true);
+        setBozzaRipristinata(bozza.salvataIl);
+      } else if (sessioneId) {
         // modifica di una sessione esistente
         const s = await db.sessioni.get(sessioneId);
         if (!s) return nav("/calendario", { replace: true });
@@ -137,6 +174,21 @@ export default function Sessione() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessioneId]);
 
+  // ---- Salvataggio automatico della bozza a ogni modifica ----
+  useEffect(() => {
+    if (!pronto || !sporco) return;
+    const bozza: Bozza = {
+      data,
+      schedaId,
+      allenamentoId,
+      note,
+      righe,
+      nomiStorici,
+      salvataIl: Date.now(),
+    };
+    salvaBozza(kBozza, bozza);
+  }, [pronto, sporco, kBozza, data, schedaId, allenamentoId, note, righe, nomiStorici]);
+
   async function caricaEsercizi(aid: number) {
     const esercizi = aid
       ? await db.esercizi.where("allenamentoId").equals(aid).sortBy("ordine")
@@ -153,6 +205,7 @@ export default function Sessione() {
       !confirm("Cambiando allenamento perderai i dati inseriti. Continuare?")
     )
       return;
+    setSporco(true);
     setAllenamentoId(aid);
     await caricaEsercizi(aid);
   };
@@ -162,15 +215,28 @@ export default function Sessione() {
       !confirm("Cambiando scheda perderai i dati inseriti. Continuare?")
     )
       return;
+    setSporco(true);
     setSchedaId(sid);
     setAllenamentoId(0);
     setRighe([]);
   };
 
-  const aggiornaRiga = (i: number, f: (r: RigaEsercizio) => RigaEsercizio) =>
+  const aggiornaRiga = (i: number, f: (r: RigaEsercizio) => RigaEsercizio) => {
+    setSporco(true);
     setRighe((rr) => rr.map((r, j) => (j === i ? f(r) : r)));
+  };
+
+  /** Butta la bozza e ricarica il form da zero */
+  const scartaBozza = () => {
+    if (!confirm("Scartare i dati non salvati?")) return;
+    eliminaBozza(kBozza);
+    nav(sessioneId ? `/sessione/${sessioneId}` : `/sessione/nuova?data=${data}`, {
+      replace: true,
+    });
+  };
 
   const salva = async () => {
+    if (!allenamentoId) return alert("Seleziona l'allenamento svolto.");
     const serie: SerieInput[] = [];
     righe.forEach((r, ordine) => {
       r.serie
@@ -197,6 +263,7 @@ export default function Sessione() {
       },
       serie,
     );
+    eliminaBozza(kBozza);
     nav(`/calendario?giorno=${data}`, { replace: true });
   };
 
@@ -204,11 +271,13 @@ export default function Sessione() {
     if (!sessioneId || !confirm("Eliminare questo allenamento dal calendario?"))
       return;
     await eliminaSessione(sessioneId);
+    eliminaBozza(kBozza);
     nav(`/calendario?giorno=${data}`, { replace: true });
   };
 
   if (!pronto) return null;
   const schedaEsiste = !!schede?.some((s) => s.id === schedaId);
+  const allenamentoEsiste = !!allenamenti?.some((a) => a.id === allenamentoId);
 
   return (
     <>
@@ -229,6 +298,22 @@ export default function Sessione() {
         }
       />
       <Pagina>
+        {bozzaRipristinata && (
+          <div className="card riga" style={{ borderColor: "var(--accento)" }}>
+            <span className="spazio piccolo">
+              Ho ripristinato i dati non salvati del{" "}
+              {formatta(isoGiorno(new Date(bozzaRipristinata)), "d MMM")}{" "}
+              {new Date(bozzaRipristinata).toLocaleTimeString("it-IT", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+              .
+            </span>
+            <button className="btn-icona" onClick={scartaBozza}>
+              Scarta
+            </button>
+          </div>
+        )}
         <div className="card colonna" style={{ gap: 12 }}>
           <label className="campo">
             Data
@@ -236,7 +321,11 @@ export default function Sessione() {
               type="date"
               value={data}
               max="2100-12-31"
-              onChange={(e) => e.target.value && setData(e.target.value)}
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setSporco(true);
+                setData(e.target.value);
+              }}
             />
           </label>
           {sessioneId && !schedaEsiste ? (
@@ -269,6 +358,11 @@ export default function Sessione() {
                   onChange={(e) => cambiaAllenamento(Number(e.target.value))}
                 >
                   <option value={0}>Seleziona…</option>
+                  {allenamentoId > 0 && !allenamentoEsiste && allenamenti && (
+                    <option value={allenamentoId}>
+                      {nomiStorici.allenamento || "Allenamento"} (eliminato)
+                    </option>
+                  )}
                   {allenamenti?.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.nome}
@@ -305,7 +399,10 @@ export default function Sessione() {
               Note
               <textarea
                 value={note}
-                onChange={(e) => setNote(e.target.value)}
+                onChange={(e) => {
+                  setSporco(true);
+                  setNote(e.target.value);
+                }}
                 placeholder="Sensazioni, dolori, energia…"
               />
             </label>
@@ -451,4 +548,3 @@ function BloccoEsercizio({
     </section>
   );
 }
-

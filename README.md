@@ -23,10 +23,15 @@ L'app è pubblicata su **GitHub Pages**: <https://alemozzoni.github.io/MyGym/>
 - Gli aggiornamenti arrivano da soli: quando una nuova versione è pronta compare il banner *Nuova versione disponibile → Aggiorna*.
 
 > Usa l'app sempre dall'icona in Home. Rimuovere l'icona cancella anche i dati: prima esporta un backup.
-> Per salvare il backup su Google Drive: *Esporta backup* → *Salva su File* → *Drive*.
+> Per salvare il backup su Google Drive: *Impostazioni* → *Esporta backup* → *Salva backup* → *Salva su File* → *Drive*.
+
+### Protezione dei dati
+- **Promemoria backup**: avviso quando l'ultimo backup è più vecchio della frequenza scelta in Impostazioni (predefinita: 7 giorni).
+- **Bozze automatiche**: l'allenamento che stai compilando viene salvato a ogni modifica; se iOS chiude l'app compare *Hai un allenamento non salvato → Riprendi*.
 
 ## Struttura
 
 - `src/db/` – schema Dexie, operazioni (`repo.ts`), backup JSON
 - `src/lib/calcoli.ts` – 1RM stimato (Epley), volume, rilevamento progresso/stallo/calo
+- `src/lib/promemoria.ts` – promemoria backup e bozze (localStorage)
 - `src/features/` – schede, calendario/sessioni, progressi, diete, impostazioni

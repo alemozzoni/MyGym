@@ -6,6 +6,7 @@ export interface SerieBase {
 }
 
 export interface PuntoSessione {
+  sessioneId?: number;
   data: string; // YYYY-MM-DD
   caricoMax: number;
   e1rm: number; // 1RM stimato (migliore serie)
@@ -49,9 +50,10 @@ export function puntiDaSerie(righe: (SerieBase & { data: string; sessioneId: num
     g.serie.push(r);
     gruppi.set(r.sessioneId, g);
   }
-  return [...gruppi.values()]
-    .map((g) => riepilogoSessione(g.data, g.serie))
-    .sort((a, b) => a.data.localeCompare(b.data));
+  return [...gruppi.entries()]
+    .map(([sessioneId, g]) => ({ ...riepilogoSessione(g.data, g.serie), sessioneId }))
+    // stessa data: ordine di inserimento (id crescente)
+    .sort((a, b) => a.data.localeCompare(b.data) || a.sessioneId - b.sessioneId);
 }
 
 /**

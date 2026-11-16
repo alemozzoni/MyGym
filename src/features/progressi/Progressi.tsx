@@ -321,11 +321,11 @@ export default function Progressi() {
             .slice(0, 15)
             .map((p, i) => {
               const serie = righe.serie.filter(
-                (s) => s.nomeEsercizio === nome && s.data === p.data,
+                (s) => s.nomeEsercizio === nome && s.sessioneId === p.sessioneId,
               );
               return (
                 <div
-                  key={`${p.data}-${i}`}
+                  key={p.sessioneId ?? i}
                   className="riga"
                   style={{
                     padding: "10px 14px",

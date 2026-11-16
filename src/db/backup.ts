@@ -47,23 +47,37 @@ export async function importaJson(testo: string) {
   });
 }
 
-/** Scarica il backup; su iPhone usa il foglio di condivisione (Salva su File / iCloud) */
-export async function scaricaBackup() {
+/** Prepara il file di backup (operazione asincrona: legge tutto il database) */
+export async function preparaBackup(): Promise<File> {
   const json = await esportaJson();
-  const nome = `mygym-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const file = new File([json], nome, { type: 'application/json' });
+  // nome con data locale (non UTC)
+  const d = new Date();
+  const data = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return new File([json], `mygym-backup-${data}.json`, { type: 'application/json' });
+}
+
+/**
+ * Salva un file già pronto. Va chiamata DIRETTAMENTE nel gestore del tocco:
+ * Safari apre il foglio di condivisione solo subito dopo un gesto dell'utente.
+ * Restituisce true se il file è stato salvato/condiviso, false se annullato.
+ */
+export async function salvaFile(file: File): Promise<boolean> {
   if (navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: 'Backup MyGym' });
-      return;
+      await navigator.share({ files: [file] });
+      return true;
     } catch (e) {
-      if ((e as Error).name === 'AbortError') return;
+      if ((e as Error).name === 'AbortError') return false;
+      // altri errori: si prova con il download classico
     }
   }
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
-  a.download = nome;
+  a.download = file.name;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return true;
 }

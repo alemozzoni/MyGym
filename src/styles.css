@@ -77,7 +77,7 @@ h3 {
 /* ===== Layout ===== */
 .app {
   min-height: 100dvh;
-  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--avvisi-h, 0px));
 }
 
 .header {
@@ -490,28 +490,41 @@ label.campo {
   gap: 8px;
   padding: 8px;
 }
-.pdf-pagine canvas {
-  width: 100%;
+.pdf-pagine img {
+  display: block;
+  max-width: none;
   height: auto;
   background: #fff;
   border-radius: 4px;
 }
 
-/* ===== Banner aggiornamento ===== */
-.banner-aggiornamento {
+/* ===== Avvisi sopra la tab bar ===== */
+.area-avvisi {
   position: fixed;
   left: 12px;
   right: 12px;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 10px);
   z-index: 30;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 696px;
+  margin: 0 auto;
+}
+.avviso {
+  display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 10px 10px 16px;
+  padding: 8px 8px 8px 16px;
   background: var(--bg-3);
   border: 1px solid var(--bordo);
   border-radius: var(--raggio);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   font-weight: 600;
+  font-size: 15px;
   animation: sali 0.2s ease-out;
+}
+.btn-piccolo {
+  min-height: 36px;
+  padding: 6px 14px;
 }

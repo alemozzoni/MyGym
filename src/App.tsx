@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { TabBar } from './components/Layout';
-import { BannerAggiornamento } from './components/BannerAggiornamento';
+import { Avvisi } from './components/Avvisi';
 import ListaSchede from './features/schede/ListaSchede';
 import DettaglioScheda from './features/schede/DettaglioScheda';
 import Calendario from './features/calendario/Calendario';
@@ -34,7 +34,7 @@ export default function App() {
         </Routes>
         </Suspense>
         <TabBar />
-        <BannerAggiornamento />
+        <Avvisi />
       </div>
     </HashRouter>
   );
