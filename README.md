@@ -35,3 +35,7 @@ L'app è pubblicata su **GitHub Pages**: <https://alemozzoni.github.io/MyGym/>
 - `src/lib/calcoli.ts` – 1RM stimato (Epley), volume, rilevamento progresso/stallo/calo
 - `src/lib/promemoria.ts` – promemoria backup e bozze (localStorage)
 - `src/features/` – schede, calendario/sessioni, progressi, diete, impostazioni
+
+## Licenza
+
+Distribuito con licenza [MIT](LICENSE).
