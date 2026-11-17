@@ -67,6 +67,21 @@ textarea {
   resize: vertical;
   min-height: 80px;
 }
+/* Safari iOS dà al campo data una larghezza propria che ignora width:100%
+   e lo fa uscire dal riquadro: si toglie l'aspetto nativo */
+input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
 
 h1,
 h2,
@@ -77,7 +92,9 @@ h3 {
 /* ===== Layout ===== */
 .app {
   min-height: 100dvh;
-  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + var(--avvisi-h, 0px));
+  padding-bottom: calc(
+    var(--tabbar-h) + env(safe-area-inset-bottom) + var(--avvisi-h, 0px)
+  );
 }
 
 .header {
@@ -273,6 +290,11 @@ label.campo {
   gap: 6px;
   font-size: 14px;
   color: var(--testo-2);
+}
+/* i figli di una colonna flex non devono superare la larghezza del contenitore */
+label.campo > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* ===== Modale (bottom sheet) ===== */
