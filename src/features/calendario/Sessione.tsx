@@ -10,7 +10,12 @@ import {
 } from "../../db/repo";
 import { Header, Pagina } from "../../components/Layout";
 import { Stepper } from "../../components/Stepper";
-import { IconaCestino, IconaPiu } from "../../components/Icone";
+import {
+  IconaCestino,
+  IconaGiu,
+  IconaPiu,
+  IconaSu,
+} from "../../components/Icone";
 import { formatta, isoGiorno, oggi } from "../../lib/date";
 import {
   chiaveBozza,
@@ -39,6 +44,8 @@ interface RigaSerie {
 }
 
 interface RigaEsercizio {
+  /** chiave React stabile: resta la stessa quando la riga viene spostata */
+  chiave: string;
   esercizioId: number;
   nome: string;
   target?: string;
@@ -46,11 +53,19 @@ interface RigaEsercizio {
   serie: RigaSerie[];
 }
 
+let contatoreChiavi = 0;
+const nuovaChiave = () => `r${Date.now().toString(36)}-${contatoreChiavi++}`;
+
+/** Le bozze salvate dalle versioni precedenti non hanno la chiave */
+const conChiave = (righe: Omit<RigaEsercizio, "chiave">[]): RigaEsercizio[] =>
+  righe.map((r) => ({ ...r, chiave: (r as RigaEsercizio).chiave || nuovaChiave() }));
+
 const righeVuote = (n: number): RigaSerie[] =>
   Array.from({ length: Math.max(1, n) }, () => ({ ripetizioni: 0, kg: 0 }));
 
 const daEsercizi = (esercizi: Esercizio[]): RigaEsercizio[] =>
   esercizi.map((e) => ({
+    chiave: nuovaChiave(),
     esercizioId: e.id,
     nome: e.nome,
     target: `${e.serieTarget} × ${e.ripTarget}`,
@@ -104,7 +119,7 @@ export default function Sessione() {
         setSchedaId(bozza.schedaId);
         setAllenamentoId(bozza.allenamentoId);
         setNote(bozza.note);
-        setRighe(bozza.righe);
+        setRighe(conChiave(bozza.righe));
         setNomiStorici(bozza.nomiStorici);
         setSporco(true);
         setBozzaRipristinata(bozza.salvataIl);
@@ -123,31 +138,29 @@ export default function Sessione() {
           .equals(s.allenamentoId)
           .sortBy("ordine");
 
-        const base = daEsercizi(esercizi).map((r) => {
-          const proprie = salvate.filter(
-            (x) => x.esercizioId === r.esercizioId,
-          );
-          return proprie.length
-            ? {
-                ...r,
-                serie: proprie.map(({ ripetizioni, kg }) => ({
-                  ripetizioni,
-                  kg,
-                })),
-              }
-            : r;
-        });
-        // esercizi registrati ma non più presenti nella scheda (modificata o eliminata)
-        const mancanti = new Map<number, RigaEsercizio>();
+        // le righe seguono l'ordine in cui gli esercizi sono stati svolti:
+        // si raggruppa per posizione, così più esercizi extra (id 0) restano separati
+        const dallaScheda = new Map(
+          daEsercizi(esercizi).map((r) => [r.esercizioId, r]),
+        );
+        const perPosizione = new Map<number, RigaEsercizio>();
         for (const x of salvate) {
-          if (base.some((r) => r.esercizioId === x.esercizioId)) continue;
-          const r = mancanti.get(x.esercizioId) ?? {
-            esercizioId: x.esercizioId,
-            nome: x.nomeEsercizio,
-            serie: [],
-          };
+          let r = perPosizione.get(x.ordineEsercizio);
+          if (!r) {
+            const scheda = dallaScheda.get(x.esercizioId);
+            // target e descrizione solo se l'esercizio è ancora quello della scheda
+            const stessa = scheda && scheda.nome === x.nomeEsercizio;
+            r = {
+              chiave: nuovaChiave(),
+              esercizioId: x.esercizioId,
+              nome: x.nomeEsercizio,
+              target: stessa ? scheda.target : undefined,
+              descrizione: stessa ? scheda.descrizione : undefined,
+              serie: [],
+            };
+            perPosizione.set(x.ordineEsercizio, r);
+          }
           r.serie.push({ ripetizioni: x.ripetizioni, kg: x.kg });
-          mancanti.set(x.esercizioId, r);
         }
         setData(s.data);
         setSchedaId(s.schedaId);
@@ -157,7 +170,7 @@ export default function Sessione() {
           scheda: s.nomeScheda,
           allenamento: s.nomeAllenamento,
         });
-        setRighe([...base, ...mancanti.values()]);
+        setRighe([...perPosizione.values()]);
       } else {
         // nuova sessione: scheda dal link oppure quella attiva
         let sid = schedaId;
@@ -224,6 +237,27 @@ export default function Sessione() {
   const aggiornaRiga = (i: number, f: (r: RigaEsercizio) => RigaEsercizio) => {
     setSporco(true);
     setRighe((rr) => rr.map((r, j) => (j === i ? f(r) : r)));
+  };
+
+  /** Sposta un esercizio su (-1) o giù (+1) nell'ordine di svolgimento */
+  const spostaRiga = (i: number, direzione: -1 | 1) => {
+    const dest = i + direzione;
+    if (dest < 0 || dest >= righe.length) return;
+    setSporco(true);
+    setRighe((rr) => {
+      const nuove = [...rr];
+      [nuove[i], nuove[dest]] = [nuove[dest], nuove[i]];
+      return nuove;
+    });
+  };
+
+  const rimuoviRiga = (i: number) => {
+    const r = righe[i];
+    const conDati = r.serie.some((s) => s.ripetizioni || s.kg);
+    if (conDati && !confirm(`Rimuovere "${r.nome}" e le serie inserite?`))
+      return;
+    setSporco(true);
+    setRighe((rr) => rr.filter((_, j) => j !== i));
   };
 
   /** Butta la bozza e ricarica il form da zero */
@@ -385,8 +419,12 @@ export default function Sessione() {
 
         {righe.map((r, i) => (
           <BloccoEsercizio
-            key={`${r.esercizioId}-${i}`}
+            key={r.chiave}
             riga={r}
+            primo={i === 0}
+            ultimo={i === righe.length - 1}
+            onSposta={(d) => spostaRiga(i, d)}
+            onRimuovi={() => rimuoviRiga(i)}
             data={data}
             sessioneId={sessioneId}
             onChange={(f) => aggiornaRiga(i, f)}
@@ -419,11 +457,19 @@ export default function Sessione() {
 /** Un esercizio con le sue serie (ripetizioni + kg) */
 function BloccoEsercizio({
   riga,
+  primo,
+  ultimo,
   data,
   sessioneId,
   onChange,
+  onSposta,
+  onRimuovi,
 }: {
   riga: RigaEsercizio;
+  primo: boolean;
+  ultimo: boolean;
+  onSposta: (direzione: -1 | 1) => void;
+  onRimuovi: () => void;
   data: string;
   sessioneId?: number;
   onChange: (f: (r: RigaEsercizio) => RigaEsercizio) => void;
@@ -477,6 +523,33 @@ function BloccoEsercizio({
             </div>
           )}
         </div>
+        {/* riordino: l'ordine delle righe è l'ordine di svolgimento salvato */}
+        <button
+          className="btn-icona grigio"
+          aria-label="Sposta su"
+          disabled={primo}
+          style={{ opacity: primo ? 0.3 : 1 }}
+          onClick={() => onSposta(-1)}
+        >
+          <IconaSu />
+        </button>
+        <button
+          className="btn-icona grigio"
+          aria-label="Sposta giù"
+          disabled={ultimo}
+          style={{ opacity: ultimo ? 0.3 : 1 }}
+          onClick={() => onSposta(1)}
+        >
+          <IconaGiu />
+        </button>
+        <button
+          className="btn-icona"
+          style={{ color: "var(--ko)" }}
+          aria-label={`Rimuovi ${riga.nome}`}
+          onClick={onRimuovi}
+        >
+          <IconaCestino />
+        </button>
       </div>
       {info && riga.descrizione && (
         <div className="descrizione" style={{ marginTop: 0 }}>
