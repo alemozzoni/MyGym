@@ -13,6 +13,7 @@ import { Stepper } from "../../components/Stepper";
 import {
   IconaCestino,
   IconaGiu,
+  IconaMatita,
   IconaPiu,
   IconaSu,
 } from "../../components/Icone";
@@ -23,6 +24,7 @@ import {
   leggiBozza,
   salvaBozza,
 } from "../../lib/promemoria";
+import { FormEsercizioSeduta } from "./FormEsercizioSeduta";
 
 /** Stato del form salvato in localStorage: sopravvive alla chiusura dell'app da parte di iOS */
 interface Bozza {
@@ -100,7 +102,22 @@ export default function Sessione() {
     null,
   );
 
+  // modale per aggiungere un esercizio o cambiare quello della riga indicata
+  const [scelta, setScelta] = useState<
+    { modo: "aggiungi" } | { modo: "cambia"; indice: number } | null
+  >(null);
+
   const schede = useLiveQuery(() => db.schede.toArray());
+  const eserciziScheda = useLiveQuery(
+    () =>
+      allenamentoId
+        ? db.esercizi
+            .where("allenamentoId")
+            .equals(allenamentoId)
+            .sortBy("ordine")
+        : [],
+    [allenamentoId],
+  );
   const allenamenti = useLiveQuery(
     () =>
       schedaId
@@ -258,6 +275,45 @@ export default function Sessione() {
       return;
     setSporco(true);
     setRighe((rr) => rr.filter((_, j) => j !== i));
+  };
+
+  /** Riga nuova con un nome libero (esercizio non presente nella scheda) */
+  const rigaLibera = (nome: string, serie: RigaSerie[]): RigaEsercizio => ({
+    chiave: nuovaChiave(),
+    esercizioId: 0,
+    nome,
+    serie,
+  });
+
+  const confermaNome = (nome: string) => {
+    if (!scelta) return;
+    setSporco(true);
+    if (scelta.modo === "aggiungi") {
+      setRighe((rr) => [...rr, rigaLibera(nome, righeVuote(3))]);
+    } else {
+      // sostituzione: le serie già inserite restano, cambia solo l'esercizio
+      aggiornaRiga(scelta.indice, (r) => ({
+        ...rigaLibera(nome, r.serie),
+        chiave: r.chiave,
+      }));
+    }
+    setScelta(null);
+  };
+
+  const confermaEsercizio = (e: Esercizio) => {
+    if (!scelta) return;
+    const [nuova] = daEsercizi([e]);
+    setSporco(true);
+    if (scelta.modo === "aggiungi") {
+      setRighe((rr) => [...rr, nuova]);
+    } else {
+      aggiornaRiga(scelta.indice, (r) => ({
+        ...nuova,
+        chiave: r.chiave,
+        serie: r.serie,
+      }));
+    }
+    setScelta(null);
   };
 
   /** Butta la bozza e ricarica il form da zero */
@@ -425,11 +481,36 @@ export default function Sessione() {
             ultimo={i === righe.length - 1}
             onSposta={(d) => spostaRiga(i, d)}
             onRimuovi={() => rimuoviRiga(i)}
+            onCambia={() => setScelta({ modo: "cambia", indice: i })}
             data={data}
             sessioneId={sessioneId}
             onChange={(f) => aggiornaRiga(i, f)}
           />
         ))}
+
+        {allenamentoId > 0 && (
+          <button className="btn" onClick={() => setScelta({ modo: "aggiungi" })}>
+            <IconaPiu /> Aggiungi esercizio
+          </button>
+        )}
+
+        {scelta && (
+          <FormEsercizioSeduta
+            titolo={
+              scelta.modo === "aggiungi" ? "Aggiungi esercizio" : "Cambia esercizio"
+            }
+            iniziale={
+              scelta.modo === "cambia" ? righe[scelta.indice]?.nome : undefined
+            }
+            // proposti solo gli esercizi della scheda non ancora presenti
+            dallaScheda={(eserciziScheda ?? []).filter(
+              (e) => !righe.some((r) => r.esercizioId === e.id),
+            )}
+            onNome={confermaNome}
+            onEsercizio={confermaEsercizio}
+            onChiudi={() => setScelta(null)}
+          />
+        )}
 
         {righe.length > 0 && (
           <>
@@ -454,6 +535,9 @@ export default function Sessione() {
   );
 }
 
+// pulsanti più stretti nell'intestazione dell'esercizio: lasciano spazio al nome
+const compatto = { minWidth: 34, padding: 6 };
+
 /** Un esercizio con le sue serie (ripetizioni + kg) */
 function BloccoEsercizio({
   riga,
@@ -464,7 +548,9 @@ function BloccoEsercizio({
   onChange,
   onSposta,
   onRimuovi,
+  onCambia,
 }: {
+  onCambia: () => void;
   riga: RigaEsercizio;
   primo: boolean;
   ultimo: boolean;
@@ -523,12 +609,20 @@ function BloccoEsercizio({
             </div>
           )}
         </div>
+        <button
+          className="btn-icona grigio"
+          aria-label={`Cambia ${riga.nome}`}
+          style={compatto}
+          onClick={onCambia}
+        >
+          <IconaMatita />
+        </button>
         {/* riordino: l'ordine delle righe è l'ordine di svolgimento salvato */}
         <button
           className="btn-icona grigio"
           aria-label="Sposta su"
           disabled={primo}
-          style={{ opacity: primo ? 0.3 : 1 }}
+          style={{ ...compatto, opacity: primo ? 0.3 : 1 }}
           onClick={() => onSposta(-1)}
         >
           <IconaSu />
@@ -537,14 +631,14 @@ function BloccoEsercizio({
           className="btn-icona grigio"
           aria-label="Sposta giù"
           disabled={ultimo}
-          style={{ opacity: ultimo ? 0.3 : 1 }}
+          style={{ ...compatto, opacity: ultimo ? 0.3 : 1 }}
           onClick={() => onSposta(1)}
         >
           <IconaGiu />
         </button>
         <button
           className="btn-icona"
-          style={{ color: "var(--ko)" }}
+          style={{ ...compatto, color: "var(--ko)" }}
           aria-label={`Rimuovi ${riga.nome}`}
           onClick={onRimuovi}
         >
