@@ -1,78 +1,100 @@
-import { useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../../db/db';
-import { aggiungiDieta } from '../../db/repo';
-import { Header, Pagina } from '../../components/Layout';
-import { IconaAvanti, IconaCestino, IconaDieta, IconaMatita, IconaPiu } from '../../components/Icone';
-import { dimensioneFile, formatta, isoGiorno } from '../../lib/date';
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../../db/db";
+import { creaDieta } from "../../db/repo";
+import { Header, Pagina } from "../../components/Layout";
+import { IconaAvanti, IconaPiu } from "../../components/Icone";
+import { formatta, isoGiorno } from "../../lib/date";
+import { formattaMacro, haMacro, totaliGiorno } from "../../lib/dieta";
+import { FormDieta } from "./Form";
 
 export default function ListaDiete() {
-  const input = useRef<HTMLInputElement>(null);
-  const [caricamento, setCaricamento] = useState(false);
-  // non carichiamo i byte dei PDF per l'elenco: solo i metadati
+  const nav = useNavigate();
+  const [nuova, setNuova] = useState(false);
+
   const diete = useLiveQuery(async () => {
-    const tutte: { id: number; titolo: string; dimensione: number; caricataIl: number }[] = [];
-    await db.diete.orderBy('caricataIl').reverse().each(({ id, titolo, dimensione, caricataIl }) =>
-      tutte.push({ id, titolo, dimensione, caricataIl }));
-    return tutte;
+    const tutte = await db.diete.toArray();
+    // prima la dieta attiva, poi le più recenti
+    return tutte.sort(
+      (a, b) =>
+        Number(b.attiva) - Number(a.attiva) || b.aggiornataIl - a.aggiornataIl,
+    );
   });
-
-  const carica = async (files: FileList | null) => {
-    if (!files?.length) return;
-    setCaricamento(true);
-    try {
-      for (const f of Array.from(files)) {
-        if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
-          alert(`"${f.name}" non è un PDF.`);
-          continue;
-        }
-        await aggiungiDieta(f);
-      }
-    } catch (e) {
-      alert(`Errore durante il caricamento: ${(e as Error).message}`);
-    } finally {
-      setCaricamento(false);
-      if (input.current) input.current.value = '';
-    }
-  };
-
-  const rinomina = async (id: number, attuale: string) => {
-    const nuovo = prompt('Nuovo titolo', attuale)?.trim();
-    if (nuovo) await db.diete.update(id, { titolo: nuovo });
-  };
 
   return (
     <>
       <Header
         titolo="Diete"
-        azioni={<button className="btn-icona" aria-label="Carica PDF" onClick={() => input.current?.click()}><IconaPiu /></button>}
+        azioni={
+          <button
+            className="btn-icona"
+            aria-label="Nuova dieta"
+            onClick={() => setNuova(true)}
+          >
+            <IconaPiu />
+          </button>
+        }
       />
-      <input ref={input} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => carica(e.target.files)} />
       <Pagina>
-        {caricamento && <p className="muted">Caricamento…</p>}
         {diete?.length === 0 && (
           <div className="vuoto">
-            <p>Carica i PDF delle tue diete per averli sempre a portata di mano, anche offline.</p>
-            <button className="btn btn-primario" onClick={() => input.current?.click()}>Carica PDF</button>
+            <p>
+              Inserisci la tua dieta divisa per giorni e pasti, con alimenti,
+              quantità e macro.
+            </p>
+            <button className="btn btn-primario" onClick={() => setNuova(true)}>
+              Crea la prima dieta
+            </button>
           </div>
         )}
-        {diete?.map((d) => (
-          <div key={d.id} className="card riga">
-            <Link to={`/diete/${d.id}`} className="riga spazio" style={{ color: 'inherit', textDecoration: 'none' }}>
-              <span style={{ color: 'var(--accento)' }}><IconaDieta /></span>
-              <div className="spazio">
-                <div style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{d.titolo}</div>
-                <div className="muted piccolo">{formatta(isoGiorno(new Date(d.caricataIl)))} · {dimensioneFile(d.dimensione)}</div>
+        {diete?.map((d) => {
+          const nAlimenti = d.giorni.reduce(
+            (n, g) => n + g.pasti.reduce((m, p) => m + p.alimenti.length, 0),
+            0,
+          );
+          const primo = d.giorni[0];
+          const conMacro =
+            primo && haMacro(primo.pasti.flatMap((p) => p.alimenti));
+          return (
+            <Link key={d.id} to={`/diete/${d.id}`} className="card card-link">
+              <div className="riga">
+                <div className="spazio colonna" style={{ gap: 4 }}>
+                  <div className="riga">
+                    <span className="titolo-card" style={{ overflowWrap: "anywhere" }}>
+                      {d.titolo}
+                    </span>
+                    {d.attiva && <span className="badge">Attiva</span>}
+                  </div>
+                  <span className="muted">
+                    {d.giorni.length} giorn{d.giorni.length === 1 ? "o" : "i"} ·{" "}
+                    {nAlimenti} alimenti · modificata il{" "}
+                    {formatta(isoGiorno(new Date(d.aggiornataIl)))}
+                  </span>
+                  {conMacro && (
+                    <span className="muted piccolo">
+                      {primo.nome}: {formattaMacro(totaliGiorno(primo))}
+                    </span>
+                  )}
+                </div>
+                <span className="muted">
+                  <IconaAvanti />
+                </span>
               </div>
             </Link>
-            <button className="btn-icona grigio" aria-label="Rinomina" onClick={() => rinomina(d.id, d.titolo)}><IconaMatita /></button>
-            <button className="btn-icona" style={{ color: 'var(--ko)' }} aria-label="Elimina"
-              onClick={() => confirm(`Eliminare "${d.titolo}"?`) && db.diete.delete(d.id)}><IconaCestino /></button>
-            <Link to={`/diete/${d.id}`} className="muted" aria-hidden="true"><IconaAvanti /></Link>
-          </div>
-        ))}
+          );
+        })}
       </Pagina>
+      {nuova && (
+        <FormDieta
+          onChiudi={() => setNuova(false)}
+          onSalva={async (titolo, note) => {
+            const id = await creaDieta(titolo, note);
+            setNuova(false);
+            nav(`/diete/${id}`);
+          }}
+        />
+      )}
     </>
   );
 }

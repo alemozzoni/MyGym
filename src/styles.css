@@ -505,21 +505,6 @@ label.campo > * {
   color: var(--testo);
 }
 
-/* ===== PDF ===== */
-.pdf-pagine {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-}
-.pdf-pagine img {
-  display: block;
-  max-width: none;
-  height: auto;
-  background: #fff;
-  border-radius: 4px;
-}
-
 /* ===== Avvisi sopra la tab bar ===== */
 .area-avvisi {
   position: fixed;

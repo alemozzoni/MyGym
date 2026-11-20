@@ -53,13 +53,40 @@ export interface SerieSvolta {
   kg: number;
 }
 
+// ---- Dieta strutturata: giorni → pasti → alimenti ----
+
+export interface Alimento {
+  nome: string;
+  quantita: string; // testo libero: "80", "1", "q.b."
+  unita?: string; // g, ml, pz…
+  // macro facoltative, riferite alla quantità indicata
+  kcal?: number;
+  proteine?: number;
+  carboidrati?: number;
+  grassi?: number;
+  note?: string;
+}
+
+export interface Pasto {
+  nome: string; // Colazione, Pranzo…
+  orario?: string;
+  alimenti: Alimento[];
+  note?: string;
+}
+
+export interface GiornoDieta {
+  nome: string; // "Lunedì", "Giorno ON"…
+  pasti: Pasto[];
+}
+
 export interface Dieta {
   id: number;
   titolo: string;
-  // ArrayBuffer invece di Blob: più robusto su Safari iOS e semplice da esportare
-  dati: ArrayBuffer;
-  dimensione: number;
-  caricataIl: number;
+  note?: string;
+  attiva: boolean;
+  giorni: GiornoDieta[];
+  creataIl: number;
+  aggiornataIl: number;
 }
 
 // ---- Database ----
@@ -82,6 +109,12 @@ db.version(1).stores({
   serie: "++id, sessioneId, esercizioId, nomeEsercizio",
   diete: "++id, caricataIl",
 });
+
+// v2: le diete non sono più PDF ma piani strutturati.
+// I vecchi PDF vengono eliminati (scelta dell'utente: non si usano più).
+db.version(2)
+  .stores({ diete: "++id, aggiornataIl" })
+  .upgrade((tx) => tx.table("diete").clear());
 
 export const TABELLE = [
   "schede",

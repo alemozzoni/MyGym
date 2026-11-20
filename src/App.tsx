@@ -7,11 +7,11 @@ import DettaglioScheda from './features/schede/DettaglioScheda';
 import Calendario from './features/calendario/Calendario';
 import Sessione from './features/calendario/Sessione';
 import ListaDiete from './features/diete/ListaDiete';
+import DettaglioDieta from './features/diete/DettaglioDieta';
 import Impostazioni from './features/impostazioni/Impostazioni';
 
-// sezioni pesanti (grafici e pdf.js) caricate solo quando servono
+// sezione pesante (grafici) caricata solo quando serve
 const Progressi = lazy(() => import("./features/progressi/Progressi"));
-const VisualizzatorePdf = lazy(() => import("./features/diete/VisualizzatorePdf"));
 
 // HashRouter: funziona su qualsiasi hosting statico senza configurazioni di rewrite
 export default function App() {
@@ -28,7 +28,7 @@ export default function App() {
           <Route path="/sessione/:id" element={<SessioneNuovaIstanza />} />
           <Route path="/progressi" element={<Progressi />} />
           <Route path="/diete" element={<ListaDiete />} />
-          <Route path="/diete/:id" element={<VisualizzatorePdf />} />
+          <Route path="/diete/:id" element={<DettaglioDieta />} />
           <Route path="/impostazioni" element={<Impostazioni />} />
           <Route path="*" element={<Navigate to="/schede" replace />} />
         </Routes>

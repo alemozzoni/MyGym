@@ -107,7 +107,7 @@ export default function Impostazioni() {
         <div className="card colonna">
           <div className="muted">
             {conteggi?.schede ?? 0} schede · {conteggi?.sessioni ?? 0}{" "}
-            allenamenti registrati · {conteggi?.diete ?? 0} PDF
+            allenamenti registrati · {conteggi?.diete ?? 0} diete
             {spazio.usato !== undefined &&
               ` · ${dimensioneFile(spazio.usato)} usati`}
           </div>

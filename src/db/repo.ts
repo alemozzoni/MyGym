@@ -1,6 +1,8 @@
 import {
   db,
   type Allenamento,
+  type Dieta,
+  type GiornoDieta,
   type Esercizio,
   type Scheda,
   type SerieSvolta,
@@ -308,13 +310,65 @@ export async function ultimePrestazioni(
 
 // ================= DIETE =================
 
-export async function aggiungiDieta(file: File) {
-  const titolo = file.name.replace(/\.pdf$/i, "");
-  const dati = await file.arrayBuffer();
+/** Struttura di partenza: un giorno con i pasti più comuni */
+export function giornoVuoto(nome = "Giorno 1"): GiornoDieta {
+  return {
+    nome,
+    pasti: ["Colazione", "Spuntino", "Pranzo", "Merenda", "Cena"].map(
+      (nome) => ({ nome, alimenti: [] }),
+    ),
+  };
+}
+
+export async function creaDieta(titolo: string, note?: string): Promise<number> {
+  const ora = Date.now();
+  const nessunaAttiva = (await db.diete.filter((d) => d.attiva).count()) === 0;
   return db.diete.add({
     titolo,
-    dati,
-    dimensione: file.size,
-    caricataIl: Date.now(),
-  } as never);
+    note,
+    attiva: nessunaAttiva,
+    giorni: [giornoVuoto()],
+    creataIl: ora,
+    aggiornataIl: ora,
+  } as Dieta);
+}
+
+/** Aggiorna titolo, note o l'intera struttura dei giorni */
+export async function aggiornaDieta(
+  id: number,
+  modifiche: Partial<Pick<Dieta, "titolo" | "note" | "giorni">>,
+) {
+  await db.diete.update(id, { ...modifiche, aggiornataIl: Date.now() });
+}
+
+export async function impostaDietaAttiva(id: number) {
+  await db.diete.toCollection().modify((d) => {
+    d.attiva = d.id === id;
+  });
+}
+
+export async function duplicaDieta(id: number): Promise<number> {
+  const originale = await db.diete.get(id);
+  if (!originale) throw new Error("Dieta non trovata");
+  const ora = Date.now();
+  const { id: _id, ...resto } = originale;
+  return db.diete.add({
+    ...resto,
+    titolo: `${originale.titolo} (copia)`,
+    attiva: false,
+    giorni: structuredClone(originale.giorni),
+    creataIl: ora,
+    aggiornataIl: ora,
+  } as Dieta);
+}
+
+export async function eliminaDieta(id: number) {
+  await db.transaction("rw", db.diete, async () => {
+    const eraAttiva = (await db.diete.get(id))?.attiva;
+    await db.diete.delete(id);
+    if (eraAttiva) {
+      const altra = await db.diete.orderBy("aggiornataIl").last();
+      if (altra) await db.diete.update(altra.id, { attiva: true });
+    }
+  });
 }

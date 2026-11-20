@@ -1,6 +1,6 @@
 # MyGym
 
-PWA per iPhone: schede di allenamento, calendario con serie/ripetizioni/kg, grafici dei progressi e PDF delle diete.
+PWA per iPhone: schede di allenamento, calendario con serie/ripetizioni/kg, grafici dei progressi e diete con pasti, alimenti e macro.
 I dati restano **solo sul dispositivo** (IndexedDB). Usa *Impostazioni → Esporta backup* periodicamente.
 
 ## Comandi

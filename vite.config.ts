@@ -28,8 +28,6 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // il worker di pdf.js è grande: alziamo il limite di precache
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         globPatterns: ['**/*.{js,mjs,css,html,png,svg,woff2}'],
       },
     }),

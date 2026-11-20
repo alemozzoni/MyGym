@@ -97,3 +97,33 @@ describe('sessioni', () => {
     expect(await db.serie.count()).toBe(0);
   });
 });
+
+describe('diete', () => {
+  it('la prima dieta è attiva e parte con un giorno e i pasti base', async () => {
+    const a = await repo.creaDieta('Massa');
+    const b = await repo.creaDieta('Definizione');
+    const da = (await db.diete.get(a))!;
+    expect(da.attiva).toBe(true);
+    expect((await db.diete.get(b))!.attiva).toBe(false);
+    expect(da.giorni).toHaveLength(1);
+    expect(da.giorni[0].pasti.map((p) => p.nome)).toContain('Pranzo');
+  });
+
+  it('la copia è indipendente dall\'originale', async () => {
+    const a = await repo.creaDieta('Massa');
+    const copia = await repo.duplicaDieta(a);
+    const c = (await db.diete.get(copia))!;
+    c.giorni[0].nome = 'Modificato';
+    await repo.aggiornaDieta(copia, { giorni: c.giorni });
+    expect((await db.diete.get(a))!.giorni[0].nome).toBe('Giorno 1');
+    expect(c.titolo).toBe('Massa (copia)');
+    expect(c.attiva).toBe(false);
+  });
+
+  it('eliminando la dieta attiva ne diventa attiva un\'altra', async () => {
+    const a = await repo.creaDieta('A');
+    const b = await repo.creaDieta('B');
+    await repo.eliminaDieta(a);
+    expect((await db.diete.get(b))!.attiva).toBe(true);
+  });
+});
