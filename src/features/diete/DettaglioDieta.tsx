@@ -1,37 +1,57 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Alimento } from "../../db/db";
+import { db, type Alimento, type GiornoDieta } from "../../db/db";
 import * as repo from "../../db/repo";
 import { Header, Pagina } from "../../components/Layout";
 import {
+  IconaAvanti,
   IconaCestino,
   IconaCopia,
+  IconaGiu,
+  IconaIndietro,
   IconaMatita,
+  IconaPiu,
   IconaStella,
+  IconaSu,
 } from "../../components/Icone";
 import {
   formattaMacro,
   haMacro,
+  sposta,
   totaliGiorno,
   totaliPasto,
 } from "../../lib/dieta";
-import { FormDieta } from "./Form";
+import { FormAlimento, FormDieta, FormGiorno, FormPasto } from "./Form";
 
 /** "80 g", "1 pz", "q.b." */
 export const quantitaAlimento = (a: Alimento) =>
   [a.quantita, a.unita].filter(Boolean).join(" ");
 
+// quale modale è aperta (indici riferiti al giorno selezionato)
+type Dialogo =
+  | { tipo: "dieta" }
+  | { tipo: "giorno"; nuovo: boolean }
+  | { tipo: "pasto"; indice?: number }
+  | { tipo: "alimento"; pasto: number; indice?: number }
+  | null;
+
 export default function DettaglioDieta() {
   const id = Number(useParams().id);
   const nav = useNavigate();
   const [modifica, setModifica] = useState(false);
-  const [rinomina, setRinomina] = useState(false);
+  const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [giornoSel, setGiornoSel] = useState(0);
 
   const dieta = useLiveQuery(
     async () => (await db.diete.get(id)) ?? null,
     [id],
+  );
+  // tutti gli alimenti già inseriti: suggerimenti per nome, quantità e macro
+  const precedenti = useLiveQuery(async () =>
+    (await db.diete.toArray()).flatMap((d) =>
+      d.giorni.flatMap((g) => g.pasti.flatMap((p) => p.alimenti)),
+    ),
   );
 
   if (dieta === undefined) return null;
@@ -46,7 +66,19 @@ export default function DettaglioDieta() {
     );
   }
 
-  const giorno = dieta.giorni[Math.min(giornoSel, dieta.giorni.length - 1)];
+  const gi = Math.min(giornoSel, dieta.giorni.length - 1);
+  const giorno = dieta.giorni[gi];
+
+  /** Applica una modifica a una copia dei giorni e la salva */
+  const salvaGiorni = async (f: (giorni: GiornoDieta[]) => GiornoDieta[]) => {
+    await repo.aggiornaDieta(id, { giorni: f(structuredClone(dieta.giorni)) });
+  };
+  /** Modifica solo il giorno selezionato */
+  const salvaGiorno = (f: (g: GiornoDieta) => void) =>
+    salvaGiorni((giorni) => {
+      f(giorni[gi]);
+      return giorni;
+    });
 
   const elimina = async () => {
     if (!confirm(`Eliminare la dieta "${dieta.titolo}"?`)) return;
@@ -55,6 +87,30 @@ export default function DettaglioDieta() {
   };
 
   const duplica = async () => nav(`/diete/${await repo.duplicaDieta(id)}`);
+
+  const duplicaGiorno = async () => {
+    await salvaGiorni((giorni) => {
+      const copia = structuredClone(giorni[gi]);
+      copia.nome = `${copia.nome} (copia)`;
+      giorni.splice(gi + 1, 0, copia);
+      return giorni;
+    });
+    setGiornoSel(gi + 1);
+  };
+
+  const eliminaGiorno = async () => {
+    if (!confirm(`Eliminare il giorno "${giorno.nome}" e i suoi pasti?`))
+      return;
+    await salvaGiorni((giorni) => giorni.filter((_, i) => i !== gi));
+    setGiornoSel(Math.max(0, gi - 1));
+  };
+
+  const spostaGiorno = async (d: -1 | 1) => {
+    await salvaGiorni((giorni) => sposta(giorni, gi, d));
+    setGiornoSel(Math.min(Math.max(0, gi + d), dieta.giorni.length - 1));
+  };
+
+  const totGiorno = haMacro(giorno.pasti.flatMap((p) => p.alimenti));
 
   return (
     <>
@@ -80,7 +136,10 @@ export default function DettaglioDieta() {
 
         {modifica && (
           <div className="riga" style={{ flexWrap: "wrap" }}>
-            <button className="btn" onClick={() => setRinomina(true)}>
+            <button
+              className="btn"
+              onClick={() => setDialogo({ tipo: "dieta" })}
+            >
               <IconaMatita /> Titolo e note
             </button>
             <button className="btn" onClick={duplica}>
@@ -98,82 +157,300 @@ export default function DettaglioDieta() {
           </button>
         )}
 
-        {dieta.giorni.length > 1 && (
-          <div className="segmenti" style={{ overflowX: "auto" }}>
-            {dieta.giorni.map((g, i) => (
+        {(dieta.giorni.length > 1 || modifica) && (
+          <div className="riga">
+            <div className="segmenti spazio" style={{ overflowX: "auto" }}>
+              {dieta.giorni.map((g, i) => (
+                <button
+                  key={i}
+                  className={i === gi ? "attivo" : ""}
+                  style={{ whiteSpace: "nowrap" }}
+                  onClick={() => setGiornoSel(i)}
+                >
+                  {g.nome}
+                </button>
+              ))}
+            </div>
+            {modifica && (
               <button
-                key={i}
-                className={g === giorno ? "attivo" : ""}
-                style={{ whiteSpace: "nowrap" }}
-                onClick={() => setGiornoSel(i)}
+                className="btn-icona"
+                aria-label="Nuovo giorno"
+                onClick={() => setDialogo({ tipo: "giorno", nuovo: true })}
               >
-                {g.nome}
+                <IconaPiu />
               </button>
-            ))}
+            )}
           </div>
         )}
 
-        {giorno && (
-          <>
+        <div className="riga">
+          <h3 className="spazio" style={{ fontSize: 17 }}>
+            {giorno.nome}
+          </h3>
+          {modifica && (
+            <>
+              <button
+                className="btn-icona grigio"
+                aria-label="Sposta giorno prima"
+                disabled={gi === 0}
+                style={{ opacity: gi === 0 ? 0.3 : 1 }}
+                onClick={() => spostaGiorno(-1)}
+              >
+                <IconaIndietro />
+              </button>
+              <button
+                className="btn-icona grigio"
+                aria-label="Sposta giorno dopo"
+                disabled={gi === dieta.giorni.length - 1}
+                style={{ opacity: gi === dieta.giorni.length - 1 ? 0.3 : 1 }}
+                onClick={() => spostaGiorno(1)}
+              >
+                <IconaAvanti />
+              </button>
+              <button
+                className="btn-icona grigio"
+                aria-label="Rinomina giorno"
+                onClick={() => setDialogo({ tipo: "giorno", nuovo: false })}
+              >
+                <IconaMatita />
+              </button>
+              <button
+                className="btn-icona grigio"
+                aria-label="Duplica giorno"
+                onClick={duplicaGiorno}
+              >
+                <IconaCopia />
+              </button>
+              {dieta.giorni.length > 1 && (
+                <button
+                  className="btn-icona"
+                  style={{ color: "var(--ko)" }}
+                  aria-label="Elimina giorno"
+                  onClick={eliminaGiorno}
+                >
+                  <IconaCestino />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        {totGiorno && (
+          <div className="muted">
+            Totale giorno: {formattaMacro(totaliGiorno(giorno))}
+          </div>
+        )}
+
+        {giorno.pasti.map((p, i) => (
+          <section key={i} className="card colonna">
             <div className="riga">
-              <h3 className="spazio" style={{ fontSize: 17 }}>
-                {giorno.nome}
-              </h3>
+              <div className="spazio">
+                <div className="titolo-card">{p.nome}</div>
+                {p.orario && <div className="muted">{p.orario}</div>}
+              </div>
+              {modifica && (
+                <>
+                  <button
+                    className="btn-icona grigio"
+                    aria-label="Sposta pasto su"
+                    disabled={i === 0}
+                    style={{ opacity: i === 0 ? 0.3 : 1 }}
+                    onClick={() =>
+                      salvaGiorno((g) => {
+                        g.pasti = sposta(g.pasti, i, -1);
+                      })
+                    }
+                  >
+                    <IconaSu />
+                  </button>
+                  <button
+                    className="btn-icona grigio"
+                    aria-label="Sposta pasto giù"
+                    disabled={i === giorno.pasti.length - 1}
+                    style={{ opacity: i === giorno.pasti.length - 1 ? 0.3 : 1 }}
+                    onClick={() =>
+                      salvaGiorno((g) => {
+                        g.pasti = sposta(g.pasti, i, 1);
+                      })
+                    }
+                  >
+                    <IconaGiu />
+                  </button>
+                  <button
+                    className="btn-icona grigio"
+                    aria-label={`Modifica ${p.nome}`}
+                    onClick={() => setDialogo({ tipo: "pasto", indice: i })}
+                  >
+                    <IconaMatita />
+                  </button>
+                  <button
+                    className="btn-icona"
+                    style={{ color: "var(--ko)" }}
+                    aria-label={`Elimina ${p.nome}`}
+                    onClick={() =>
+                      confirm(`Eliminare il pasto "${p.nome}"?`) &&
+                      salvaGiorno((g) => {
+                        g.pasti.splice(i, 1);
+                      })
+                    }
+                  >
+                    <IconaCestino />
+                  </button>
+                </>
+              )}
             </div>
-            {haMacro(giorno.pasti.flatMap((p) => p.alimenti)) && (
-              <div className="muted">
-                Totale giorno: {formattaMacro(totaliGiorno(giorno))}
+
+            {p.alimenti.length === 0 && (
+              <div className="muted piccolo">
+                {modifica
+                  ? "Nessun alimento."
+                  : "Nessun alimento: tocca Modifica per inserirli."}
               </div>
             )}
-
-            {giorno.pasti.map((p, i) => (
-              <section key={i} className="card colonna">
-                <div className="riga">
-                  <div className="spazio">
-                    <div className="titolo-card">{p.nome}</div>
-                    {p.orario && <div className="muted">{p.orario}</div>}
-                  </div>
+            {p.alimenti.map((a, j) => {
+              const contenuto = (
+                <>
+                  <span className="spazio" style={{ overflowWrap: "anywhere" }}>
+                    {a.nome}
+                    {a.note && <span className="muted"> · {a.note}</span>}
+                  </span>
+                  <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
+                    {quantitaAlimento(a)}
+                  </span>
+                </>
+              );
+              // in modifica ogni alimento si tocca per cambiarlo
+              return modifica ? (
+                <button
+                  key={j}
+                  className="riga riga-alimento"
+                  onClick={() =>
+                    setDialogo({ tipo: "alimento", pasto: i, indice: j })
+                  }
+                >
+                  {contenuto}
+                  <span className="muted">
+                    <IconaMatita />
+                  </span>
+                </button>
+              ) : (
+                <div
+                  key={j}
+                  className="riga"
+                  style={{ alignItems: "baseline" }}
+                >
+                  {contenuto}
                 </div>
-                {p.alimenti.length === 0 && (
-                  <div className="muted piccolo">Nessun alimento.</div>
-                )}
-                {p.alimenti.map((a, j) => (
-                  <div
-                    key={j}
-                    className="riga"
-                    style={{ alignItems: "baseline" }}
-                  >
-                    <span
-                      className="spazio"
-                      style={{ overflowWrap: "anywhere" }}
-                    >
-                      {a.nome}
-                      {a.note && <span className="muted"> · {a.note}</span>}
-                    </span>
-                    <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-                      {quantitaAlimento(a)}
-                    </span>
-                  </div>
-                ))}
-                {haMacro(p.alimenti) && (
-                  <div className="muted piccolo">
-                    {formattaMacro(totaliPasto(p))}
-                  </div>
-                )}
-                {p.note && <div className="descrizione">{p.note}</div>}
-              </section>
-            ))}
-          </>
+              );
+            })}
+            {haMacro(p.alimenti) && (
+              <div className="muted piccolo">
+                {formattaMacro(totaliPasto(p))}
+              </div>
+            )}
+            {p.note && <div className="descrizione">{p.note}</div>}
+            {modifica && (
+              <button
+                className="btn"
+                onClick={() => setDialogo({ tipo: "alimento", pasto: i })}
+              >
+                <IconaPiu /> Alimento
+              </button>
+            )}
+          </section>
+        ))}
+
+        {modifica && (
+          <button className="btn" onClick={() => setDialogo({ tipo: "pasto" })}>
+            <IconaPiu /> Aggiungi pasto
+          </button>
         )}
       </Pagina>
 
-      {rinomina && (
+      {dialogo?.tipo === "dieta" && (
         <FormDieta
           iniziale={dieta}
-          onChiudi={() => setRinomina(false)}
+          onChiudi={() => setDialogo(null)}
           onSalva={async (titolo, note) => {
             await repo.aggiornaDieta(id, { titolo, note });
-            setRinomina(false);
+            setDialogo(null);
+          }}
+        />
+      )}
+
+      {dialogo?.tipo === "giorno" && (
+        <FormGiorno
+          iniziale={dialogo.nuovo ? undefined : giorno.nome}
+          onChiudi={() => setDialogo(null)}
+          onSalva={async (nome) => {
+            if (dialogo.nuovo) {
+              // il nuovo giorno parte con gli stessi nomi dei pasti, senza alimenti
+              await salvaGiorni((giorni) => [
+                ...giorni,
+                {
+                  nome,
+                  pasti: giorno.pasti.map(({ nome, orario }) => ({
+                    nome,
+                    orario,
+                    alimenti: [],
+                  })),
+                },
+              ]);
+              setGiornoSel(dieta.giorni.length);
+            } else {
+              await salvaGiorno((g) => {
+                g.nome = nome;
+              });
+            }
+            setDialogo(null);
+          }}
+        />
+      )}
+
+      {dialogo?.tipo === "pasto" && (
+        <FormPasto
+          iniziale={
+            dialogo.indice !== undefined
+              ? giorno.pasti[dialogo.indice]
+              : undefined
+          }
+          onChiudi={() => setDialogo(null)}
+          onSalva={async (dati) => {
+            await salvaGiorno((g) => {
+              if (dialogo.indice === undefined)
+                g.pasti.push({ ...dati, alimenti: [] });
+              else Object.assign(g.pasti[dialogo.indice], dati);
+            });
+            setDialogo(null);
+          }}
+        />
+      )}
+
+      {dialogo?.tipo === "alimento" && (
+        <FormAlimento
+          iniziale={
+            dialogo.indice !== undefined
+              ? giorno.pasti[dialogo.pasto].alimenti[dialogo.indice]
+              : undefined
+          }
+          precedenti={precedenti ?? []}
+          onChiudi={() => setDialogo(null)}
+          onElimina={
+            dialogo.indice === undefined
+              ? undefined
+              : async () => {
+                  await salvaGiorno((g) => {
+                    g.pasti[dialogo.pasto].alimenti.splice(dialogo.indice!, 1);
+                  });
+                  setDialogo(null);
+                }
+          }
+          onSalva={async (a) => {
+            await salvaGiorno((g) => {
+              const alimenti = g.pasti[dialogo.pasto].alimenti;
+              if (dialogo.indice === undefined) alimenti.push(a);
+              else alimenti[dialogo.indice] = a;
+            });
+            setDialogo(null);
           }}
         />
       )}
