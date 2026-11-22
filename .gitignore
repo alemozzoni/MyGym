@@ -2,3 +2,5 @@ node_modules
 dist
 dev-dist
 *.tsbuildinfo
+firebase-debug.log
+firestore-debug.log

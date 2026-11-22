@@ -9,12 +9,14 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "icons": "node scripts/genera-icone.mjs"
+    "icons": "node scripts/genera-icone.mjs",
+    "dev:emulatori": "VITE_EMULATORI=1 vite"
   },
   "dependencies": {
     "date-fns": "^4.4.0",
     "dexie": "^4.4.7",
     "dexie-react-hooks": "^4.4.0",
+    "firebase": "^13.4.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
