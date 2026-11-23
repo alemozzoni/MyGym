@@ -27,9 +27,9 @@ describe('riepilogoSessione', () => {
 describe('puntiDaSerie', () => {
   it('raggruppa per sessione e ordina per data', () => {
     const punti = puntiDaSerie([
-      { sessioneId: 2, data: '2026-01-08', kg: 50, ripetizioni: 10 },
-      { sessioneId: 1, data: '2026-01-01', kg: 40, ripetizioni: 10 },
-      { sessioneId: 1, data: '2026-01-01', kg: 45, ripetizioni: 8 },
+      { sessioneId: 'b', data: '2026-01-08', kg: 50, ripetizioni: 10 },
+      { sessioneId: 'a', data: '2026-01-01', kg: 40, ripetizioni: 10 },
+      { sessioneId: 'a', data: '2026-01-01', kg: 45, ripetizioni: 8 },
     ]);
     expect(punti.map((x) => x.data)).toEqual(['2026-01-01', '2026-01-08']);
     expect(punti[0].serie).toBe(2);

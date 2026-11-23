@@ -6,7 +6,7 @@ export interface SerieBase {
 }
 
 export interface PuntoSessione {
-  sessioneId?: number;
+  sessioneId?: string;
   data: string; // YYYY-MM-DD
   caricoMax: number;
   e1rm: number; // 1RM stimato (migliore serie)
@@ -43,17 +43,20 @@ export function riepilogoSessione(data: string, serie: SerieBase[]): PuntoSessio
 }
 
 /** Raggruppa le serie per sessione/data e restituisce i punti ordinati per data */
-export function puntiDaSerie(righe: (SerieBase & { data: string; sessioneId: number })[]): PuntoSessione[] {
-  const gruppi = new Map<number, { data: string; serie: SerieBase[] }>();
+export function puntiDaSerie(
+  righe: (SerieBase & { data: string; sessioneId: string; creataIl?: number })[],
+): PuntoSessione[] {
+  const gruppi = new Map<string, { data: string; creataIl: number; serie: SerieBase[] }>();
   for (const r of righe) {
-    const g = gruppi.get(r.sessioneId) ?? { data: r.data, serie: [] };
+    const g = gruppi.get(r.sessioneId) ?? { data: r.data, creataIl: r.creataIl ?? 0, serie: [] };
     g.serie.push(r);
     gruppi.set(r.sessioneId, g);
   }
   return [...gruppi.entries()]
-    .map(([sessioneId, g]) => ({ ...riepilogoSessione(g.data, g.serie), sessioneId }))
-    // stessa data: ordine di inserimento (id crescente)
-    .sort((a, b) => a.data.localeCompare(b.data) || a.sessioneId - b.sessioneId);
+    .map(([sessioneId, g]) => ({ ...riepilogoSessione(g.data, g.serie), sessioneId, creataIl: g.creataIl }))
+    // stessa data: ordine di inserimento
+    .sort((a, b) => a.data.localeCompare(b.data) || a.creataIl - b.creataIl)
+    .map(({ creataIl: _c, ...p }) => p);
 }
 
 /**

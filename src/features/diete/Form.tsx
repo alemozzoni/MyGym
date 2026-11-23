@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Modale } from "../../components/Modale";
-import type { Alimento, Pasto } from "../../db/db";
+import type { Alimento, Pasto } from "../../db/tipi";
 
 /** Creazione / modifica di titolo e note della dieta */
 export function FormDieta({

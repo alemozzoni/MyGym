@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Modale } from '../../components/Modale';
-import type { Esercizio } from '../../db/db';
-import type { DatiEsercizio } from '../../db/repo';
+import type { Esercizio } from '../../db/tipi';
+
+export type DatiEsercizio = Omit<Esercizio, 'id'>;
 
 /** Creazione / modifica di una scheda */
 export function FormScheda({ iniziale, onSalva, onChiudi }: {

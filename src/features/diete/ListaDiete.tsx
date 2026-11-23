@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../../db/db";
+import { useDati } from "../../db/dati";
 import { creaDieta } from "../../db/repo";
 import { Header, Pagina } from "../../components/Layout";
 import { IconaAvanti, IconaPiu } from "../../components/Icone";
@@ -13,14 +12,12 @@ export default function ListaDiete() {
   const nav = useNavigate();
   const [nuova, setNuova] = useState(false);
 
-  const diete = useLiveQuery(async () => {
-    const tutte = await db.diete.toArray();
-    // prima la dieta attiva, poi le più recenti
-    return tutte.sort(
-      (a, b) =>
-        Number(b.attiva) - Number(a.attiva) || b.aggiornataIl - a.aggiornataIl,
-    );
-  });
+  const tutte = useDati()!.diete;
+  // prima la dieta attiva, poi le più recenti
+  const diete = [...tutte].sort(
+    (a, b) =>
+      Number(b.attiva) - Number(a.attiva) || b.aggiornataIl - a.aggiornataIl,
+  );
 
   return (
     <>
@@ -37,7 +34,7 @@ export default function ListaDiete() {
         }
       />
       <Pagina>
-        {diete?.length === 0 && (
+        {diete.length === 0 && (
           <div className="vuoto">
             <p>
               Inserisci la tua dieta divisa per giorni e pasti, con alimenti,
@@ -48,7 +45,7 @@ export default function ListaDiete() {
             </button>
           </div>
         )}
-        {diete?.map((d) => {
+        {diete.map((d) => {
           const nAlimenti = d.giorni.reduce(
             (n, g) => n + g.pasti.reduce((m, p) => m + p.alimenti.length, 0),
             0,
@@ -88,8 +85,8 @@ export default function ListaDiete() {
       {nuova && (
         <FormDieta
           onChiudi={() => setNuova(false)}
-          onSalva={async (titolo, note) => {
-            const id = await creaDieta(titolo, note);
+          onSalva={(titolo, note) => {
+            const id = creaDieta(titolo, note, tutte);
             setNuova(false);
             nav(`/diete/${id}`);
           }}

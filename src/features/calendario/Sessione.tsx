@@ -1,13 +1,9 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Esercizio } from "../../db/db";
-import {
-  eliminaSessione,
-  salvaSessione,
-  ultimePrestazioni,
-  type SerieInput,
-} from "../../db/repo";
+import { useDati } from "../../db/dati";
+import type { Esercizio, SerieSvolta, Sessione as TipoSessione } from "../../db/tipi";
+import { eliminaSessione, salvaSessione } from "../../db/repo";
+import { ultimePrestazioni } from "../../lib/modello";
 import { Header, Pagina } from "../../components/Layout";
 import { Stepper } from "../../components/Stepper";
 import {
@@ -29,8 +25,8 @@ import { FormEsercizioSeduta } from "./FormEsercizioSeduta";
 /** Stato del form salvato in localStorage: sopravvive alla chiusura dell'app da parte di iOS */
 interface Bozza {
   data: string;
-  schedaId: number;
-  allenamentoId: number;
+  schedaId: string;
+  allenamentoId: string;
   note: string;
   righe: RigaEsercizio[];
   nomiStorici: { scheda: string; allenamento: string };
@@ -48,7 +44,7 @@ interface RigaSerie {
 interface RigaEsercizio {
   /** chiave React stabile: resta la stessa quando la riga viene spostata */
   chiave: string;
-  esercizioId: number;
+  esercizioId: string; // "" per gli esercizi fuori scheda
   nome: string;
   target?: string;
   descrizione?: string;
@@ -77,18 +73,16 @@ const daEsercizi = (esercizi: Esercizio[]): RigaEsercizio[] =>
 
 export default function Sessione() {
   const idParam = useParams().id;
-  const sessioneId = idParam ? Number(idParam) : undefined;
+  const sessioneId = idParam || undefined;
   const [query] = useSearchParams();
   const nav = useNavigate();
   const kBozza = chiaveBozza(sessioneId);
 
   const [pronto, setPronto] = useState(false);
   const [data, setData] = useState(dataValida(query.get("data")) ?? oggi());
-  const [schedaId, setSchedaId] = useState<number>(
-    Number(query.get("scheda")) || 0,
-  );
-  const [allenamentoId, setAllenamentoId] = useState<number>(
-    Number(query.get("allenamento")) || 0,
+  const [schedaId, setSchedaId] = useState(query.get("scheda") ?? "");
+  const [allenamentoId, setAllenamentoId] = useState(
+    query.get("allenamento") ?? "",
   );
   const [note, setNote] = useState("");
   const [righe, setRighe] = useState<RigaEsercizio[]>([]);
@@ -107,29 +101,22 @@ export default function Sessione() {
     { modo: "aggiungi" } | { modo: "cambia"; indice: number } | null
   >(null);
 
-  const schede = useLiveQuery(() => db.schede.toArray());
-  const eserciziScheda = useLiveQuery(
-    () =>
-      allenamentoId
-        ? db.esercizi
-            .where("allenamentoId")
-            .equals(allenamentoId)
-            .sortBy("ordine")
-        : [],
-    [allenamentoId],
-  );
-  const allenamenti = useLiveQuery(
-    () =>
-      schedaId
-        ? db.allenamenti.where("schedaId").equals(schedaId).sortBy("ordine")
-        : [],
-    [schedaId],
-  );
+  const { schede, sessioni } = useDati()!;
+  const scheda = schede.find((s) => s.id === schedaId);
+  const allenamenti = scheda?.allenamenti ?? [];
+  const eserciziDi = (aid: string) =>
+    allenamenti.find((a) => a.id === aid)?.esercizi ?? [];
+  const eserciziScheda = eserciziDi(allenamentoId);
 
   // ---- Caricamento iniziale ----
   useEffect(() => {
-    (async () => {
-      const bozza = leggiBozza<Bozza>(kBozza);
+    {
+      let bozza = leggiBozza<Bozza>(kBozza);
+      // bozze della versione locale (id numerici): non sono più utilizzabili
+      if (bozza && typeof bozza.schedaId !== "string") {
+        eliminaBozza(kBozza);
+        bozza = null;
+      }
       if (bozza) {
         // c'è un allenamento non salvato: lo ripristiniamo
         setData(bozza.data);
@@ -142,21 +129,22 @@ export default function Sessione() {
         setBozzaRipristinata(bozza.salvataIl);
       } else if (sessioneId) {
         // modifica di una sessione esistente
-        const s = await db.sessioni.get(sessioneId);
-        if (!s) return nav("/calendario", { replace: true });
-        const salvate = (
-          await db.serie.where("sessioneId").equals(sessioneId).toArray()
-        ).sort(
+        const s = sessioni.find((x) => x.id === sessioneId);
+        if (!s) {
+          nav("/calendario", { replace: true });
+          return;
+        }
+        const salvate = [...s.serie].sort(
           (a, b) =>
             a.ordineEsercizio - b.ordineEsercizio || a.numero - b.numero,
         );
-        const esercizi = await db.esercizi
-          .where("allenamentoId")
-          .equals(s.allenamentoId)
-          .sortBy("ordine");
+        const esercizi =
+          schede
+            .find((x) => x.id === s.schedaId)
+            ?.allenamenti.find((a) => a.id === s.allenamentoId)?.esercizi ?? [];
 
         // le righe seguono l'ordine in cui gli esercizi sono stati svolti:
-        // si raggruppa per posizione, così più esercizi extra (id 0) restano separati
+        // si raggruppa per posizione, così più esercizi fuori scheda restano separati
         const dallaScheda = new Map(
           daEsercizi(esercizi).map((r) => [r.esercizioId, r]),
         );
@@ -164,15 +152,15 @@ export default function Sessione() {
         for (const x of salvate) {
           let r = perPosizione.get(x.ordineEsercizio);
           if (!r) {
-            const scheda = dallaScheda.get(x.esercizioId);
+            const daScheda = dallaScheda.get(x.esercizioId);
             // target e descrizione solo se l'esercizio è ancora quello della scheda
-            const stessa = scheda && scheda.nome === x.nomeEsercizio;
+            const stessa = daScheda && daScheda.nome === x.nomeEsercizio;
             r = {
               chiave: nuovaChiave(),
               esercizioId: x.esercizioId,
               nome: x.nomeEsercizio,
-              target: stessa ? scheda.target : undefined,
-              descrizione: stessa ? scheda.descrizione : undefined,
+              target: stessa ? daScheda.target : undefined,
+              descrizione: stessa ? daScheda.descrizione : undefined,
               serie: [],
             };
             perPosizione.set(x.ordineEsercizio, r);
@@ -190,17 +178,22 @@ export default function Sessione() {
         setRighe([...perPosizione.values()]);
       } else {
         // nuova sessione: scheda dal link oppure quella attiva
-        let sid = schedaId;
-        if (!sid)
-          sid =
-            (await db.schede.filter((s) => s.attiva).first())?.id ??
-            (await db.schede.toCollection().first())?.id ??
-            0;
+        const sid =
+          schedaId ||
+          schede.find((s) => s.attiva)?.id ||
+          schede[0]?.id ||
+          "";
         setSchedaId(sid);
-        if (allenamentoId) await caricaEsercizi(allenamentoId);
+        if (allenamentoId) {
+          const es =
+            schede.find((s) => s.id === sid)?.allenamenti.find(
+              (a) => a.id === allenamentoId,
+            )?.esercizi ?? [];
+          setRighe(daEsercizi(es));
+        }
       }
       setPronto(true);
-    })();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessioneId]);
 
@@ -219,17 +212,11 @@ export default function Sessione() {
     salvaBozza(kBozza, bozza);
   }, [pronto, sporco, kBozza, data, schedaId, allenamentoId, note, righe, nomiStorici]);
 
-  async function caricaEsercizi(aid: number) {
-    const esercizi = aid
-      ? await db.esercizi.where("allenamentoId").equals(aid).sortBy("ordine")
-      : [];
-    setRighe(daEsercizi(esercizi));
-  }
 
   const modificata = righe.some((r) =>
     r.serie.some((s) => s.ripetizioni || s.kg),
   );
-  const cambiaAllenamento = async (aid: number) => {
+  const cambiaAllenamento = (aid: string) => {
     if (
       modificata &&
       !confirm("Cambiando allenamento perderai i dati inseriti. Continuare?")
@@ -237,9 +224,9 @@ export default function Sessione() {
       return;
     setSporco(true);
     setAllenamentoId(aid);
-    await caricaEsercizi(aid);
+    setRighe(daEsercizi(eserciziDi(aid)));
   };
-  const cambiaScheda = async (sid: number) => {
+  const cambiaScheda = (sid: string) => {
     if (
       modificata &&
       !confirm("Cambiando scheda perderai i dati inseriti. Continuare?")
@@ -247,7 +234,7 @@ export default function Sessione() {
       return;
     setSporco(true);
     setSchedaId(sid);
-    setAllenamentoId(0);
+    setAllenamentoId("");
     setRighe([]);
   };
 
@@ -280,7 +267,7 @@ export default function Sessione() {
   /** Riga nuova con un nome libero (esercizio non presente nella scheda) */
   const rigaLibera = (nome: string, serie: RigaSerie[]): RigaEsercizio => ({
     chiave: nuovaChiave(),
-    esercizioId: 0,
+    esercizioId: "",
     nome,
     serie,
   });
@@ -325,9 +312,9 @@ export default function Sessione() {
     });
   };
 
-  const salva = async () => {
+  const salva = () => {
     if (!allenamentoId) return alert("Seleziona l'allenamento svolto.");
-    const serie: SerieInput[] = [];
+    const serie: SerieSvolta[] = [];
     righe.forEach((r, ordine) => {
       r.serie
         .filter((s) => s.ripetizioni > 0 || s.kg > 0)
@@ -343,7 +330,8 @@ export default function Sessione() {
     });
     if (!serie.length)
       return alert("Inserisci almeno una serie con ripetizioni o peso.");
-    await salvaSessione(
+    // il salvataggio è immediato anche offline: Firestore sincronizza appena può
+    salvaSessione(
       {
         id: sessioneId,
         data,
@@ -352,22 +340,24 @@ export default function Sessione() {
         note: note.trim() || undefined,
       },
       serie,
+      schede,
+      sessioni.find((x) => x.id === sessioneId),
     );
     eliminaBozza(kBozza);
     nav(`/calendario?giorno=${data}`, { replace: true });
   };
 
-  const elimina = async () => {
+  const elimina = () => {
     if (!sessioneId || !confirm("Eliminare questo allenamento dal calendario?"))
       return;
-    await eliminaSessione(sessioneId);
+    eliminaSessione(sessioneId);
     eliminaBozza(kBozza);
     nav(`/calendario?giorno=${data}`, { replace: true });
   };
 
   if (!pronto) return null;
-  const schedaEsiste = !!schede?.some((s) => s.id === schedaId);
-  const allenamentoEsiste = !!allenamenti?.some((a) => a.id === allenamentoId);
+  const schedaEsiste = !!scheda;
+  const allenamentoEsiste = allenamenti.some((a) => a.id === allenamentoId);
 
   return (
     <>
@@ -430,10 +420,10 @@ export default function Sessione() {
                 Scheda
                 <select
                   value={schedaId}
-                  onChange={(e) => cambiaScheda(Number(e.target.value))}
+                  onChange={(e) => cambiaScheda(e.target.value)}
                 >
-                  {!schedaId && <option value={0}>Seleziona…</option>}
-                  {schede?.map((s) => (
+                  {!schedaEsiste && <option value="">Seleziona…</option>}
+                  {schede.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.nome}
                       {s.attiva ? " ★" : ""}
@@ -445,15 +435,15 @@ export default function Sessione() {
                 Allenamento
                 <select
                   value={allenamentoId}
-                  onChange={(e) => cambiaAllenamento(Number(e.target.value))}
+                  onChange={(e) => cambiaAllenamento(e.target.value)}
                 >
-                  <option value={0}>Seleziona…</option>
-                  {allenamentoId > 0 && !allenamentoEsiste && allenamenti && (
+                  <option value="">Seleziona…</option>
+                  {!!allenamentoId && !allenamentoEsiste && (
                     <option value={allenamentoId}>
                       {nomiStorici.allenamento || "Allenamento"} (eliminato)
                     </option>
                   )}
-                  {allenamenti?.map((a) => (
+                  {allenamenti.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.nome}
                     </option>
@@ -464,12 +454,12 @@ export default function Sessione() {
           )}
         </div>
 
-        {schede?.length === 0 && (
+        {schede.length === 0 && (
           <div className="vuoto">
             Crea prima una scheda nella sezione Schede.
           </div>
         )}
-        {allenamentoId > 0 && righe.length === 0 && (
+        {!!allenamentoId && righe.length === 0 && (
           <div className="vuoto">Questo allenamento non ha esercizi.</div>
         )}
 
@@ -484,11 +474,12 @@ export default function Sessione() {
             onCambia={() => setScelta({ modo: "cambia", indice: i })}
             data={data}
             sessioneId={sessioneId}
+            sessioni={sessioni}
             onChange={(f) => aggiornaRiga(i, f)}
           />
         ))}
 
-        {allenamentoId > 0 && (
+        {!!allenamentoId && (
           <button className="btn" onClick={() => setScelta({ modo: "aggiungi" })}>
             <IconaPiu /> Aggiungi esercizio
           </button>
@@ -549,6 +540,7 @@ function BloccoEsercizio({
   onSposta,
   onRimuovi,
   onCambia,
+  sessioni,
 }: {
   onCambia: () => void;
   riga: RigaEsercizio;
@@ -557,16 +549,16 @@ function BloccoEsercizio({
   onSposta: (direzione: -1 | 1) => void;
   onRimuovi: () => void;
   data: string;
-  sessioneId?: number;
+  sessioneId?: string;
+  sessioni: TipoSessione[];
   onChange: (f: (r: RigaEsercizio) => RigaEsercizio) => void;
 }) {
   const [info, setInfo] = useState(false);
   // prestazione precedente, mostrata come riferimento
-  const ultima = useLiveQuery(
-    () => ultimePrestazioni(riga.nome, data, sessioneId),
-    [riga.nome, data, sessioneId],
+  const ultimaValida = useMemo(
+    () => ultimePrestazioni(sessioni, riga.nome, data, sessioneId),
+    [sessioni, riga.nome, data, sessioneId],
   );
-  const ultimaValida = ultima && ultima.data <= data ? ultima : null;
 
   const setSerie = (j: number, campo: keyof RigaSerie, v: number) =>
     onChange((r) => ({

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Alimento, type GiornoDieta } from "../../db/db";
+import { useDati } from "../../db/dati";
+import type { Alimento, GiornoDieta } from "../../db/tipi";
 import * as repo from "../../db/repo";
 import { Header, Pagina } from "../../components/Layout";
 import {
@@ -18,10 +18,10 @@ import {
 import {
   formattaMacro,
   haMacro,
-  sposta,
   totaliGiorno,
   totaliPasto,
 } from "../../lib/dieta";
+import { sposta } from "../../lib/modello";
 import { FormAlimento, FormDieta, FormGiorno, FormPasto } from "./Form";
 
 /** "80 g", "1 pz", "q.b." */
@@ -37,24 +37,19 @@ type Dialogo =
   | null;
 
 export default function DettaglioDieta() {
-  const id = Number(useParams().id);
+  const id = useParams().id ?? "";
   const nav = useNavigate();
   const [modifica, setModifica] = useState(false);
   const [dialogo, setDialogo] = useState<Dialogo>(null);
   const [giornoSel, setGiornoSel] = useState(0);
 
-  const dieta = useLiveQuery(
-    async () => (await db.diete.get(id)) ?? null,
-    [id],
-  );
+  const diete = useDati()!.diete;
+  const dieta = diete.find((d) => d.id === id);
   // tutti gli alimenti già inseriti: suggerimenti per nome, quantità e macro
-  const precedenti = useLiveQuery(async () =>
-    (await db.diete.toArray()).flatMap((d) =>
-      d.giorni.flatMap((g) => g.pasti.flatMap((p) => p.alimenti)),
-    ),
+  const precedenti = diete.flatMap((d) =>
+    d.giorni.flatMap((g) => g.pasti.flatMap((p) => p.alimenti)),
   );
 
-  if (dieta === undefined) return null;
   if (!dieta) {
     return (
       <>
@@ -70,9 +65,8 @@ export default function DettaglioDieta() {
   const giorno = dieta.giorni[gi];
 
   /** Applica una modifica a una copia dei giorni e la salva */
-  const salvaGiorni = async (f: (giorni: GiornoDieta[]) => GiornoDieta[]) => {
-    await repo.aggiornaDieta(id, { giorni: f(structuredClone(dieta.giorni)) });
-  };
+  const salvaGiorni = (f: (giorni: GiornoDieta[]) => GiornoDieta[]) =>
+    repo.aggiornaDieta(id, { giorni: f(structuredClone(dieta.giorni)) });
   /** Modifica solo il giorno selezionato */
   const salvaGiorno = (f: (g: GiornoDieta) => void) =>
     salvaGiorni((giorni) => {
@@ -80,16 +74,16 @@ export default function DettaglioDieta() {
       return giorni;
     });
 
-  const elimina = async () => {
+  const elimina = () => {
     if (!confirm(`Eliminare la dieta "${dieta.titolo}"?`)) return;
-    await repo.eliminaDieta(id);
+    repo.eliminaDieta(dieta, diete);
     nav("/diete", { replace: true });
   };
 
-  const duplica = async () => nav(`/diete/${await repo.duplicaDieta(id)}`);
+  const duplica = () => nav(`/diete/${repo.duplicaDieta(dieta)}`);
 
   const duplicaGiorno = async () => {
-    await salvaGiorni((giorni) => {
+    salvaGiorni((giorni) => {
       const copia = structuredClone(giorni[gi]);
       copia.nome = `${copia.nome} (copia)`;
       giorni.splice(gi + 1, 0, copia);
@@ -101,12 +95,12 @@ export default function DettaglioDieta() {
   const eliminaGiorno = async () => {
     if (!confirm(`Eliminare il giorno "${giorno.nome}" e i suoi pasti?`))
       return;
-    await salvaGiorni((giorni) => giorni.filter((_, i) => i !== gi));
+    salvaGiorni((giorni) => giorni.filter((_, i) => i !== gi));
     setGiornoSel(Math.max(0, gi - 1));
   };
 
   const spostaGiorno = async (d: -1 | 1) => {
-    await salvaGiorni((giorni) => sposta(giorni, gi, d));
+    salvaGiorni((giorni) => sposta(giorni, gi, d));
     setGiornoSel(Math.min(Math.max(0, gi + d), dieta.giorni.length - 1));
   };
 
@@ -152,7 +146,7 @@ export default function DettaglioDieta() {
         )}
 
         {!dieta.attiva && (
-          <button className="btn" onClick={() => repo.impostaDietaAttiva(id)}>
+          <button className="btn" onClick={() => repo.impostaDietaAttiva(id, diete)}>
             <IconaStella /> Imposta come dieta attiva
           </button>
         )}
@@ -371,7 +365,7 @@ export default function DettaglioDieta() {
           iniziale={dieta}
           onChiudi={() => setDialogo(null)}
           onSalva={async (titolo, note) => {
-            await repo.aggiornaDieta(id, { titolo, note });
+            repo.aggiornaDieta(id, { titolo, note });
             setDialogo(null);
           }}
         />
@@ -384,7 +378,7 @@ export default function DettaglioDieta() {
           onSalva={async (nome) => {
             if (dialogo.nuovo) {
               // il nuovo giorno parte con gli stessi nomi dei pasti, senza alimenti
-              await salvaGiorni((giorni) => [
+              salvaGiorni((giorni) => [
                 ...giorni,
                 {
                   nome,
@@ -397,7 +391,7 @@ export default function DettaglioDieta() {
               ]);
               setGiornoSel(dieta.giorni.length);
             } else {
-              await salvaGiorno((g) => {
+              salvaGiorno((g) => {
                 g.nome = nome;
               });
             }
@@ -415,7 +409,7 @@ export default function DettaglioDieta() {
           }
           onChiudi={() => setDialogo(null)}
           onSalva={async (dati) => {
-            await salvaGiorno((g) => {
+            salvaGiorno((g) => {
               if (dialogo.indice === undefined)
                 g.pasti.push({ ...dati, alimenti: [] });
               else Object.assign(g.pasti[dialogo.indice], dati);
@@ -432,20 +426,20 @@ export default function DettaglioDieta() {
               ? giorno.pasti[dialogo.pasto].alimenti[dialogo.indice]
               : undefined
           }
-          precedenti={precedenti ?? []}
+          precedenti={precedenti}
           onChiudi={() => setDialogo(null)}
           onElimina={
             dialogo.indice === undefined
               ? undefined
               : async () => {
-                  await salvaGiorno((g) => {
+                  salvaGiorno((g) => {
                     g.pasti[dialogo.pasto].alimenti.splice(dialogo.indice!, 1);
                   });
                   setDialogo(null);
                 }
           }
           onSalva={async (a) => {
-            await salvaGiorno((g) => {
+            salvaGiorno((g) => {
               const alimenti = g.pasti[dialogo.pasto].alimenti;
               if (dialogo.indice === undefined) alimenti.push(a);
               else alimenti[dialogo.indice] = a;

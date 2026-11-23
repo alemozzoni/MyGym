@@ -1,47 +1,19 @@
-import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
-import { db } from './db';
-import { esportaJson, importaJson } from './backup';
-import { aggiornaDieta, creaAllenamento, creaDieta, creaEsercizio, creaScheda, eliminaScheda, salvaSessione } from './repo';
+import { esportaJson, leggiBackup } from './backup';
+import type { Dati } from './tipi';
 
-describe('backup e repository', () => {
-  it('esporta e reimporta tutti i dati, diete comprese', async () => {
-    const s = await creaScheda('Prova');
-    const a = await creaAllenamento(s, 'Giorno A');
-    const e = await creaEsercizio(a, { nome: 'Panca piana', descrizione: '', serieTarget: 3, ripTarget: '8' });
-    await salvaSessione({ data: '2026-11-16', schedaId: s, allenamentoId: a }, [
-      { esercizioId: e, nomeEsercizio: 'Panca piana', ordineEsercizio: 0, numero: 1, ripetizioni: 8, kg: 80 },
-    ]);
-    const d = await creaDieta('Dieta');
-    await aggiornaDieta(d, {
-      giorni: [{ nome: 'Lunedì', pasti: [{ nome: 'Pranzo', alimenti: [{ nome: 'Riso', quantita: '100', unita: 'g', kcal: 350 }] }] }],
-    });
+const dati: Dati = {
+  schede: [{ id: 's1', nome: 'Massa', attiva: true, allenamenti: [], creataIl: 1, aggiornataIl: 1 }],
+  sessioni: [{ id: 'x1', data: '2026-11-20', schedaId: 's1', allenamentoId: 'a1', nomeScheda: 'Massa', nomeAllenamento: 'A', serie: [], creataIl: 2 }],
+  diete: [{ id: 'd1', titolo: 'Dieta', attiva: true, giorni: [{ nome: 'Lunedì', pasti: [] }], creataIl: 1, aggiornataIl: 1 }],
+};
 
-    const json = await esportaJson();
-    await Promise.all(db.tables.map((t) => t.clear()));
-    await importaJson(json);
-
-    expect(await db.schede.count()).toBe(1);
-    expect(await db.serie.count()).toBe(1);
-    const dieta = await db.diete.toCollection().first();
-    expect(dieta!.giorni[0].pasti[0].alimenti[0]).toMatchObject({ nome: 'Riso', kcal: 350 });
+describe('backup', () => {
+  it('esporta e rilegge i dati attuali', () => {
+    expect(leggiBackup(esportaJson(dati))).toEqual(dati);
   });
 
-  it('eliminando la scheda lo storico resta', async () => {
-    const s = (await db.schede.toCollection().first())!.id;
-    await eliminaScheda(s);
-    expect(await db.esercizi.count()).toBe(0);
-    expect(await db.serie.count()).toBe(1);
-    expect((await db.sessioni.toCollection().first())!.nomeScheda).toBe('Prova');
-  });
-
-  it('un backup della versione 1 si importa senza i vecchi PDF', async () => {
-    const v1 = JSON.stringify({
-      app: 'mygym', versione: 1,
-      contenuto: { schede: [{ id: 5, nome: 'Vecchia', attiva: true, creataIl: 1, aggiornataIl: 1 }], diete: [{ id: 1, titolo: 'PDF', dati: 'AQID' }] },
-    });
-    await importaJson(v1);
-    expect((await db.schede.toArray()).map((s) => s.nome)).toEqual(['Vecchia']);
-    expect(await db.diete.count()).toBe(0);
+  it('rifiuta file non validi', () => {
+    expect(() => leggiBackup('{"app":"altro"}')).toThrow('non valido');
   });
 });

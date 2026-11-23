@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Allenamento, type Esercizio } from "../../db/db";
+import { useDati } from "../../db/dati";
+import type { Allenamento, Esercizio } from "../../db/tipi";
 import * as repo from "../../db/repo";
+import { nomiEsercizi, nuovoId, sposta } from "../../lib/modello";
 import { Header, Pagina } from "../../components/Layout";
 import {
   IconaCestino,
@@ -19,35 +20,20 @@ import { FormAllenamento, FormEsercizio, FormScheda } from "./Form";
 type Dialogo =
   | { tipo: "scheda" }
   | { tipo: "allenamento"; allenamento?: Allenamento }
-  | { tipo: "esercizio"; allenamentoId: number; esercizio?: Esercizio }
+  | { tipo: "esercizio"; allenamentoId: string; esercizio?: Esercizio }
   | null;
 
 export default function DettaglioScheda() {
-  const id = Number(useParams().id);
+  const id = useParams().id ?? "";
   const nav = useNavigate();
   const [modifica, setModifica] = useState(false);
   const [dialogo, setDialogo] = useState<Dialogo>(null);
-  const [aperti, setAperti] = useState<Set<number>>(new Set()); // descrizioni espanse
+  const [aperti, setAperti] = useState<Set<string>>(new Set()); // descrizioni espanse
 
-  const dati = useLiveQuery(async () => {
-    const scheda = await db.schede.get(id);
-    if (!scheda) return { scheda: null };
-    const allenamenti = await db.allenamenti
-      .where("schedaId")
-      .equals(id)
-      .sortBy("ordine");
-    const esercizi = await db.esercizi
-      .where("allenamentoId")
-      .anyOf(allenamenti.map((a) => a.id))
-      .sortBy("ordine");
-    const nomi = [
-      ...new Set((await db.esercizi.toArray()).map((e) => e.nome)),
-    ].sort();
-    return { scheda, allenamenti, esercizi, nomi };
-  }, [id]);
+  const { schede, sessioni } = useDati()!;
+  const scheda = schede.find((s) => s.id === id);
 
-  if (!dati) return null;
-  if (!dati.scheda) {
+  if (!scheda) {
     return (
       <>
         <Header titolo="Scheda" indietro="/schede" />
@@ -57,7 +43,17 @@ export default function DettaglioScheda() {
       </>
     );
   }
-  const { scheda, allenamenti = [], esercizi = [], nomi = [] } = dati;
+  const allenamenti = scheda.allenamenti;
+  const nomi = nomiEsercizi(schede, sessioni);
+
+  /** Applica una modifica ad allenamenti ed esercizi della scheda */
+  const cambiaAllenamenti = (f: (all: Allenamento[]) => Allenamento[]) =>
+    repo.modificaAllenamenti(scheda, f);
+  /** Modifica gli esercizi di un solo allenamento */
+  const modificaEsercizi = (aid: string, f: (es: Esercizio[]) => Esercizio[]) =>
+    cambiaAllenamenti((all) =>
+      all.map((a) => (a.id === aid ? { ...a, esercizi: f(a.esercizi) } : a)),
+    );
 
   const elimina = async () => {
     if (
@@ -66,16 +62,16 @@ export default function DettaglioScheda() {
       )
     )
       return;
-    await repo.eliminaScheda(id);
+    repo.eliminaScheda(scheda, schede);
     nav("/schede", { replace: true });
   };
 
   const duplica = async () => {
-    const nuovo = await repo.duplicaScheda(id);
+    const nuovo = repo.duplicaScheda(scheda);
     nav(`/schede/${nuovo}`);
   };
 
-  const toggleDescrizione = (eid: number) =>
+  const toggleDescrizione = (eid: string) =>
     setAperti((s) => {
       const n = new Set(s);
       if (n.has(eid)) n.delete(eid);
@@ -123,7 +119,7 @@ export default function DettaglioScheda() {
         )}
 
         {!scheda.attiva && (
-          <button className="btn" onClick={() => repo.impostaSchedaAttiva(id)}>
+          <button className="btn" onClick={() => repo.impostaSchedaAttiva(id, schede)}>
             <IconaStella /> Imposta come scheda attiva
           </button>
         )}
@@ -143,7 +139,7 @@ export default function DettaglioScheda() {
         )}
 
         {allenamenti.map((a, ia) => {
-          const lista = esercizi.filter((e) => e.allenamentoId === a.id);
+          const lista = a.esercizi;
           return (
             <section key={a.id} className="card">
               <div className="riga">
@@ -156,7 +152,7 @@ export default function DettaglioScheda() {
                       className="btn-icona grigio"
                       aria-label="Sposta su"
                       disabled={ia === 0}
-                      onClick={() => repo.spostaAllenamento(a.id, -1)}
+                      onClick={() => cambiaAllenamenti((all) => sposta(all, ia, -1))}
                     >
                       <IconaSu />
                     </button>
@@ -164,7 +160,7 @@ export default function DettaglioScheda() {
                       className="btn-icona grigio"
                       aria-label="Sposta giù"
                       disabled={ia === allenamenti.length - 1}
-                      onClick={() => repo.spostaAllenamento(a.id, 1)}
+                      onClick={() => cambiaAllenamenti((all) => sposta(all, ia, 1))}
                     >
                       <IconaGiu />
                     </button>
@@ -183,7 +179,7 @@ export default function DettaglioScheda() {
                       aria-label="Elimina allenamento"
                       onClick={() =>
                         confirm(`Eliminare "${a.nome}" e i suoi esercizi?`) &&
-                        repo.eliminaAllenamento(a.id)
+                        cambiaAllenamenti((all) => all.filter((x) => x.id !== a.id))
                       }
                     >
                       <IconaCestino />
@@ -223,7 +219,9 @@ export default function DettaglioScheda() {
                           className="btn-icona grigio"
                           aria-label="Sposta su"
                           disabled={ie === 0}
-                          onClick={() => repo.spostaEsercizio(e.id, -1)}
+                          onClick={() =>
+                            modificaEsercizi(a.id, (es) => sposta(es, ie, -1))
+                          }
                         >
                           <IconaSu />
                         </button>
@@ -231,7 +229,9 @@ export default function DettaglioScheda() {
                           className="btn-icona grigio"
                           aria-label="Sposta giù"
                           disabled={ie === lista.length - 1}
-                          onClick={() => repo.spostaEsercizio(e.id, 1)}
+                          onClick={() =>
+                            modificaEsercizi(a.id, (es) => sposta(es, ie, 1))
+                          }
                         >
                           <IconaGiu />
                         </button>
@@ -254,7 +254,9 @@ export default function DettaglioScheda() {
                           aria-label="Elimina esercizio"
                           onClick={() =>
                             confirm(`Eliminare "${e.nome}"?`) &&
-                            repo.eliminaEsercizio(e.id)
+                            modificaEsercizi(a.id, (es) =>
+                              es.filter((x) => x.id !== e.id),
+                            )
                           }
                         >
                           <IconaCestino />
@@ -306,8 +308,8 @@ export default function DettaglioScheda() {
         <FormScheda
           iniziale={scheda}
           onChiudi={() => setDialogo(null)}
-          onSalva={async (nome, note) => {
-            await repo.aggiornaScheda(id, { nome, note });
+          onSalva={(nome, note) => {
+            repo.aggiornaScheda(id, { nome, note });
             setDialogo(null);
           }}
         />
@@ -316,10 +318,14 @@ export default function DettaglioScheda() {
         <FormAllenamento
           iniziale={dialogo.allenamento?.nome}
           onChiudi={() => setDialogo(null)}
-          onSalva={async (nome) => {
-            if (dialogo.allenamento)
-              await repo.rinominaAllenamento(dialogo.allenamento.id, nome);
-            else await repo.creaAllenamento(id, nome);
+          onSalva={(nome) => {
+            const esistente = dialogo.allenamento;
+            if (esistente)
+              cambiaAllenamenti((all) =>
+                all.map((a) => (a.id === esistente.id ? { ...a, nome } : a)),
+              );
+            else
+              cambiaAllenamenti((all) => [...all, { id: nuovoId(), nome, esercizi: [] }]);
             setModifica(true);
             setDialogo(null);
           }}
@@ -330,11 +336,13 @@ export default function DettaglioScheda() {
           iniziale={dialogo.esercizio}
           suggerimenti={nomi}
           onChiudi={() => setDialogo(null)}
-          onSalva={async (d) => {
-            if (dialogo.esercizio)
-              await repo.aggiornaEsercizio(dialogo.esercizio.id, d);
-            else await repo.creaEsercizio(dialogo.allenamentoId, d);
-            await repo.aggiornaScheda(id, {});
+          onSalva={(d) => {
+            const esistente = dialogo.esercizio;
+            modificaEsercizi(dialogo.allenamentoId, (es) =>
+              esistente
+                ? es.map((x) => (x.id === esistente.id ? { ...x, ...d } : x))
+                : [...es, { ...d, id: nuovoId() }],
+            );
             setDialogo(null);
           }}
         />

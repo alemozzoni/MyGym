@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { GiornoDieta } from "../db/db";
-import { formattaMacro, haMacro, sposta, totaliGiorno, totaliPasto } from "./dieta";
+import type { GiornoDieta } from "../db/tipi";
+import { formattaMacro, haMacro, totaliGiorno, totaliPasto } from "./dieta";
 
 const giorno: GiornoDieta = {
   nome: "Lunedì",
@@ -31,10 +31,5 @@ describe("dieta", () => {
   it("riconosce se ci sono macro inserite", () => {
     expect(haMacro(giorno.pasti[0].alimenti)).toBe(true);
     expect(haMacro(giorno.pasti[2].alimenti)).toBe(false);
-  });
-
-  it("sposta un elemento senza uscire dai limiti", () => {
-    expect(sposta(["a", "b", "c"], 2, -1)).toEqual(["a", "c", "b"]);
-    expect(sposta(["a", "b"], 0, -1)).toEqual(["a", "b"]);
   });
 });

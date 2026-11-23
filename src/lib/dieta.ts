@@ -1,4 +1,4 @@
-import type { Alimento, GiornoDieta, Pasto } from "../db/db";
+import type { Alimento, GiornoDieta, Pasto } from "../db/tipi";
 
 export interface Macro {
   kcal: number;
@@ -35,12 +35,3 @@ export const totaliGiorno = (g: GiornoDieta): Macro =>
 /** "560 kcal · P 32 · C 70 · G 15" (arrotondato) */
 export const formattaMacro = (m: Macro) =>
   `${Math.round(m.kcal)} kcal · P ${Math.round(m.proteine)} · C ${Math.round(m.carboidrati)} · G ${Math.round(m.grassi)}`;
-
-/** Sposta l'elemento i di una posizione (-1 su, +1 giù) restituendo un nuovo array */
-export function sposta<T>(lista: T[], i: number, direzione: -1 | 1): T[] {
-  const dest = i + direzione;
-  if (i < 0 || dest < 0 || dest >= lista.length) return lista;
-  const nuova = [...lista];
-  [nuova[i], nuova[dest]] = [nuova[dest], nuova[i]];
-  return nuova;
-}

@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
 import {
   addMonths,
   eachDayOfInterval,
@@ -13,7 +12,9 @@ import {
   startOfWeek,
 } from "date-fns";
 import { it } from "date-fns/locale";
-import { db } from "../../db/db";
+import { useDati } from "../../db/dati";
+import type { Sessione } from "../../db/tipi";
+import { perData } from "../../lib/modello";
 import { Header, Pagina } from "../../components/Layout";
 import { IconaAvanti, IconaIndietro, IconaPiu } from "../../components/Icone";
 import { dataEstesa, isoGiorno, oggi } from "../../lib/date";
@@ -38,34 +39,29 @@ export default function Calendario() {
 
   const da = isoGiorno(giorni[0]);
   const a = isoGiorno(giorni[giorni.length - 1]);
-  const sessioni = useLiveQuery(
-    () => db.sessioni.where("data").between(da, a, true, true).toArray(),
-    [da, a],
+  const tutte = useDati()!.sessioni;
+  const sessioni = useMemo(
+    () => tutte.filter((s) => s.data >= da && s.data <= a).sort(perData),
+    [tutte, da, a],
   );
 
   const perGiorno = useMemo(() => {
-    const m = new Map<string, NonNullable<typeof sessioni>>();
-    for (const s of sessioni ?? [])
-      m.set(s.data, [...(m.get(s.data) ?? []), s]);
+    const m = new Map<string, Sessione[]>();
+    for (const s of sessioni) m.set(s.data, [...(m.get(s.data) ?? []), s]);
     return m;
   }, [sessioni]);
 
-  const delGiorno = useLiveQuery(async () => {
-    const lista = await db.sessioni.where("data").equals(selezionato).toArray();
-    return Promise.all(
-      lista.map(async (s) => {
-        const serie = await db.serie.where("sessioneId").equals(s.id).toArray();
-        return {
-          ...s,
-          nEsercizi: new Set(serie.map((x) => x.nomeEsercizio)).size,
-          nSerie: serie.length,
-        };
-      }),
-    );
-  }, [selezionato]);
+  const delGiorno = tutte
+    .filter((s) => s.data === selezionato)
+    .sort(perData)
+    .map((s) => ({
+      ...s,
+      nEsercizi: new Set(s.serie.map((x) => x.nomeEsercizio)).size,
+      nSerie: s.serie.length,
+    }));
 
   const scegli = (iso: string) => setParams({ giorno: iso }, { replace: true });
-  const sessioniMese = (sessioni ?? []).filter((s) =>
+  const sessioniMese = sessioni.filter((s) =>
     isSameMonth(parseISO(s.data), mese),
   ).length;
 
@@ -164,12 +160,12 @@ export default function Calendario() {
           )}
         </div>
 
-        {delGiorno?.length === 0 && (
+        {delGiorno.length === 0 && (
           <p className="muted" style={{ margin: "0 4px" }}>
             Nessun allenamento registrato.
           </p>
         )}
-        {delGiorno?.map((s) => (
+        {delGiorno.map((s) => (
           <Link key={s.id} to={`/sessione/${s.id}`} className="card card-link">
             <div className="riga">
               <span

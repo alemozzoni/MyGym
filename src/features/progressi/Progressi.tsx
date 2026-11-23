@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useLiveQuery } from "dexie-react-hooks";
 import { addWeeks, format, parseISO, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
 import {
@@ -14,7 +13,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { db } from "../../db/db";
+import { useDati } from "../../db/dati";
 import { Header, Pagina } from "../../components/Layout";
 import {
   puntiDaSerie,
@@ -73,25 +72,27 @@ export default function Progressi() {
   const [metricaScelta, setMetrica] = useState<Metrica | null>(null);
 
   // tutte le serie con la data della relativa sessione
-  const righe = useLiveQuery(async () => {
-    const [serie, sessioni] = await Promise.all([
-      db.serie.toArray(),
-      db.sessioni.toArray(),
-    ]);
-    const dataDi = new Map(sessioni.map((s) => [s.id, s.data]));
-    return {
-      serie: serie
-        .filter((s) => dataDi.has(s.sessioneId))
-        .map((s) => ({ ...s, data: dataDi.get(s.sessioneId)! })),
+  const { sessioni } = useDati()!;
+  const righe = useMemo(
+    () => ({
+      serie: sessioni.flatMap((s) =>
+        s.serie.map((x) => ({
+          ...x,
+          sessioneId: s.id,
+          data: s.data,
+          creataIl: s.creataIl,
+        })),
+      ),
       sessioni,
-    };
-  });
+    }),
+    [sessioni],
+  );
 
   // elenco esercizi, i più recenti in alto
   const esercizi = useMemo(() => {
     const m = new Map<
       string,
-      { nome: string; ultima: string; sessioni: Set<number> }
+      { nome: string; ultima: string; sessioni: Set<string> }
     >();
     for (const s of righe?.serie ?? []) {
       const e = m.get(s.nomeEsercizio) ?? {

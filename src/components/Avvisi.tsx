@@ -1,16 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useLocation } from 'react-router-dom';
 import { useRegisterSW } from 'virtual:pwa-register/react';
-import { db } from '../db/db';
-import {
-  backupScaduto, giorniDa, K_BOZZA_NUOVA, posticipaBackup, ultimoBackup, useLocalStorage,
-} from '../lib/promemoria';
+import { K_BOZZA_NUOVA, useLocalStorage } from '../lib/promemoria';
 
 /**
  * Avvisi fissi sopra la tab bar:
  * - allenamento non salvato (es. l'app è stata chiusa da iOS mentre lo compilavi)
- * - promemoria backup
  * - nuova versione dell'app disponibile
  */
 export function Avvisi() {
@@ -18,11 +13,6 @@ export function Avvisi() {
   const inSessione = pathname.startsWith('/sessione');
 
   const bozza = useLocalStorage(() => localStorage.getItem(K_BOZZA_NUOVA));
-  const ultimo = useLocalStorage(ultimoBackup);
-  // dipende anche da frequenza/posticipo: li rilegge a ogni evento di storage
-  const scaduto = useLocalStorage(() => String(backupScaduto(true)));
-  const ciSonoDati = useLiveQuery(async () => (await db.sessioni.count()) > 0 || (await db.diete.count()) > 0);
-
   const {
     needRefresh: [daAggiornare, setDaAggiornare],
     updateServiceWorker,
@@ -41,11 +31,10 @@ export function Avvisi() {
   };
 
   const mostraBozza = !!bozza && !inSessione;
-  const mostraBackup = scaduto === 'true' && !!ciSonoDati && !inSessione && pathname !== '/impostazioni';
   // durante la compilazione di un allenamento l'aggiornamento aspetta (si perderebbero i dati)
   const mostraAggiornamento = daAggiornare && !inSessione;
 
-  const visibili = mostraBozza || mostraBackup || mostraAggiornamento;
+  const visibili = mostraBozza || mostraAggiornamento;
   const area = useRef<HTMLDivElement>(null);
   // spazio extra in fondo alla pagina pari all'altezza degli avvisi: non coprono i contenuti
   useEffect(() => {
@@ -64,7 +53,6 @@ export function Avvisi() {
   }, [visibili]);
 
   if (!visibili) return null;
-  const giorni = ultimo ? giorniDa(ultimo) : null;
 
   return (
     <div className="area-avvisi" ref={area}>
@@ -72,15 +60,6 @@ export function Avvisi() {
         <div className="avviso" role="status">
           <span className="spazio">Hai un allenamento non salvato</span>
           <Link className="btn btn-primario btn-piccolo" to="/sessione/nuova?bozza=1">Riprendi</Link>
-        </div>
-      )}
-      {mostraBackup && (
-        <div className="avviso" role="status">
-          <span className="spazio">
-            {giorni === null ? 'Non hai ancora fatto un backup' : `Ultimo backup ${giorni} giorni fa`}
-          </span>
-          <button className="btn-icona grigio" onClick={posticipaBackup}>Dopo</button>
-          <Link className="btn btn-primario btn-piccolo" to="/impostazioni">Backup</Link>
         </div>
       )}
       {mostraAggiornamento && (

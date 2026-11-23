@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
 import { Modale } from "../../components/Modale";
-import { db, type Esercizio } from "../../db/db";
+import { useDati } from "../../db/dati";
+import type { Esercizio } from "../../db/tipi";
+import { nomiEsercizi } from "../../lib/modello";
 
 /**
  * Scelta di un esercizio durante la registrazione dell'allenamento:
@@ -26,15 +27,8 @@ export function FormEsercizioSeduta({
   const [nome, setNome] = useState(iniziale ?? "");
 
   // tutti i nomi già usati: stesso nome = stesso grafico nei Progressi
-  const suggerimenti = useLiveQuery(async () => {
-    const svolti = (await db.serie
-      .orderBy("nomeEsercizio")
-      .uniqueKeys()) as string[];
-    const inScheda = (await db.esercizi.toArray()).map((e) => e.nome);
-    return [...new Set([...svolti, ...inScheda])].sort((a, b) =>
-      a.localeCompare(b, "it"),
-    );
-  });
+  const { schede, sessioni } = useDati()!;
+  const suggerimenti = nomiEsercizi(schede, sessioni);
 
   const invia = (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +49,7 @@ export function FormEsercizioSeduta({
             list="nomi-esercizi-seduta"
           />
           <datalist id="nomi-esercizi-seduta">
-            {suggerimenti?.map((s) => (
+            {suggerimenti.map((s) => (
               <option key={s} value={s} />
             ))}
           </datalist>
