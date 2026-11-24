@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { TabBar } from './components/Layout';
 import { Avvisi } from './components/Avvisi';
@@ -29,6 +29,12 @@ export default function App() {
 function Contenuto() {
   const utente = useUtente();
   const dati = useDati();
+  // dopo l'accesso l'app parte dall'inizio della pagina (la schermata di accesso
+  // poteva essere stata spostata dalla tastiera)
+  const autenticato = !!utente;
+  useEffect(() => {
+    if (autenticato) window.scrollTo(0, 0);
+  }, [autenticato]);
   // verifica dell'accesso in corso (dura pochi istanti, anche offline)
   if (utente === undefined) return null;
   if (!utente) return <Accesso />;

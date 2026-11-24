@@ -28,6 +28,9 @@ export default function Accesso() {
 
   const invia = async (e: FormEvent) => {
     e.preventDefault();
+    // chiude la tastiera PRIMA di entrare nell'app: su iPhone, se si chiude
+    // mentre la pagina cambia, la barra in basso resta posizionata troppo in alto
+    (document.activeElement as HTMLElement | null)?.blur();
     setMessaggio("");
     setAttesa(true);
     try {
