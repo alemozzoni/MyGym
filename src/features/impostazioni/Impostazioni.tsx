@@ -3,7 +3,9 @@ import { signOut } from "firebase/auth";
 import { auth } from "../../db/firebase";
 import { useDati, useUtente } from "../../db/dati";
 import { leggiBackup, preparaBackup, salvaFile } from "../../db/backup";
+import { leggiDatiLocali } from "../../db/locale";
 import { importaDati } from "../../db/repo";
+import { convertiDatiLocali } from "../../lib/migrazione";
 import { Header, Pagina } from "../../components/Layout";
 import { dimensioneFile } from "../../lib/date";
 
@@ -14,9 +16,11 @@ export default function Impostazioni() {
   const [messaggio, setMessaggio] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [inCorso, setInCorso] = useState(false);
+  const [ciSonoLocali, setCiSonoLocali] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
 
   useEffect(() => {
+    leggiDatiLocali().then((d) => setCiSonoLocali(!!d)).catch(() => {});
     const aggiorna = () => setOnline(navigator.onLine);
     window.addEventListener("online", aggiorna);
     window.addEventListener("offline", aggiorna);
@@ -39,6 +43,14 @@ export default function Impostazioni() {
       setInCorso(false);
     }
   };
+
+  const importaLocali = () =>
+    esegui(async () => {
+      const locali = await leggiDatiLocali();
+      if (!locali) throw new Error("Nessun dato locale trovato.");
+      await importaDati(convertiDatiLocali(locali), dati, false);
+      localStorage.setItem("mygym:migrazione", "fatta");
+    }, "Dati del dispositivo importati nel tuo account.");
 
   const importaFile = async (f: File | undefined) => {
     if (input.current) input.current.value = "";
@@ -91,11 +103,33 @@ export default function Impostazioni() {
           </button>
         </div>
 
+        {ciSonoLocali && (
+          <>
+            <h3 className="sezione-titolo">Dati della versione precedente</h3>
+            <div className="card colonna">
+              <div className="muted piccolo">
+                Su questo dispositivo ci sono ancora i dati salvati in locale
+                dalla versione precedente dell'app. Importandoli vengono
+                aggiunti al tuo account (ripetere l'importazione non crea
+                doppioni).
+              </div>
+              <button
+                className="btn btn-primario"
+                disabled={inCorso || !online}
+                onClick={importaLocali}
+              >
+                Importa dati del dispositivo
+              </button>
+            </div>
+          </>
+        )}
+
         <h3 className="sezione-titolo">Copia di sicurezza (facoltativa)</h3>
         <div className="card colonna" style={{ gap: 12 }}>
           <div className="muted piccolo">
             I dati sono già salvati nel tuo account: la copia in un file serve
-            solo se vuoi un archivio personale.
+            solo se vuoi un archivio personale. Puoi importare anche i backup
+            della versione precedente.
           </div>
           {file ? (
             <button className="btn btn-primario btn-blocco" onClick={salva}>

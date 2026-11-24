@@ -13,6 +13,19 @@ describe('backup', () => {
     expect(leggiBackup(esportaJson(dati))).toEqual(dati);
   });
 
+  it('converte un backup della versione locale ignorando i PDF', () => {
+    const v1 = JSON.stringify({
+      app: 'mygym', versione: 1,
+      contenuto: {
+        schede: [{ id: 5, nome: 'Vecchia', attiva: true, creataIl: 1, aggiornataIl: 1 }],
+        diete: [{ id: 1, titolo: 'PDF', dati: 'AQID' }],
+      },
+    });
+    const letti = leggiBackup(v1);
+    expect(letti.schede.map((s) => s.nome)).toEqual(['Vecchia']);
+    expect(letti.diete).toEqual([]);
+  });
+
   it('rifiuta file non validi', () => {
     expect(() => leggiBackup('{"app":"altro"}')).toThrow('non valido');
   });

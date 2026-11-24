@@ -1,6 +1,7 @@
 import type { Dati } from './tipi';
+import { convertiDatiLocali, type ContenutoLocale } from '../lib/migrazione';
 
-// 3: documenti Firestore (1-2 erano le tabelle della versione locale)
+// 1-2: tabelle della versione locale (Dexie); 3: documenti Firestore
 const VERSIONE_BACKUP = 3;
 
 /** Serializza tutti i dati in una stringa JSON */
@@ -12,9 +13,12 @@ export function esportaJson(dati: Dati): string {
 export function leggiBackup(testo: string): Dati {
   const backup = JSON.parse(testo);
   if (backup?.app !== 'mygym' || !backup.contenuto) throw new Error('File di backup non valido');
-  if ((backup.versione ?? 1) < 3) throw new Error('Backup della versione locale: non ancora supportato');
   const c = backup.contenuto;
-  return { schede: c.schede ?? [], sessioni: c.sessioni ?? [], diete: c.diete ?? [] };
+  if ((backup.versione ?? 1) >= 3) {
+    return { schede: c.schede ?? [], sessioni: c.sessioni ?? [], diete: c.diete ?? [] };
+  }
+  // versione locale: tabelle relazionali (i PDF della v1 vengono ignorati)
+  return convertiDatiLocali(c as Partial<ContenutoLocale>);
 }
 
 /** Prepara il file di backup */
