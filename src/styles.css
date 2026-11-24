@@ -105,9 +105,8 @@ h3 {
   align-items: center;
   gap: 8px;
   padding: calc(env(safe-area-inset-top) + 10px) 16px 10px;
-  background: rgba(15, 17, 21, 0.88);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* fondo pieno: su iPhone lo sfondo sfocato (backdrop-filter) rendeva sfocato anche il titolo */
+  background: var(--bg);
   border-bottom: 1px solid var(--bordo);
   min-height: 56px;
 }
